@@ -1,0 +1,366 @@
+// DevFlow — Prisma Schema
+// Database: SQLite (dev) → PostgreSQL (production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Authentication & Users
+// ─────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  workspaceMembers  WorkspaceMember[]
+  projectMembers    ProjectMember[]
+  assignedIssues    Issue[]          @relation("AssignedIssues")
+  reportedIssues    Issue[]          @relation("ReportedIssues")
+  comments          Comment[]
+  attachments       Attachment[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  family    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────
+// Workspace (Top-level organization)
+// ─────────────────────────────────────────────
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members  WorkspaceMember[]
+  projects Project[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        String @default("DEVELOPER") // ADMIN, PROJECT_MANAGER, DEVELOPER, TESTER, VIEWER
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+  @@map("workspace_members")
+}
+
+// ─────────────────────────────────────────────
+// Projects
+// ─────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  key         String // e.g., "DF", "SS" — unique per workspace
+  description String?
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ProjectMember[]
+  issues    Issue[]
+  labels    Label[]
+  sprints   Sprint[]
+  repository Repository?
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String @id @default(cuid())
+  userId    String
+  projectId String
+  role      String @default("DEVELOPER") // ADMIN, PROJECT_MANAGER, DEVELOPER, TESTER, VIEWER
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+  @@map("project_members")
+}
+
+// ─────────────────────────────────────────────
+// Issues (Core entity)
+// ─────────────────────────────────────────────
+
+model Issue {
+  id          String   @id @default(cuid())
+  number      Int // Auto-incremented per project (e.g., SS-1, SS-2)
+  title       String
+  description String?
+  type        String   @default("TASK") // BUG, TASK, FEATURE, STORY
+  status      String   @default("BACKLOG") // BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, TESTING, DONE
+  priority    String   @default("MEDIUM") // CRITICAL, HIGH, MEDIUM, LOW
+  storyPoints Int?
+  dueDate     DateTime?
+  position    Int      @default(0) // For ordering within a status column
+
+  projectId  String
+  assigneeId String?
+  reporterId String
+  sprintId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User?    @relation("AssignedIssues", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter User     @relation("ReportedIssues", fields: [reporterId], references: [id])
+  sprint   Sprint?  @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
+  labels       IssueLabel[]
+  comments     Comment[]
+  attachments  Attachment[]
+  subtasks     Issue[]       @relation("SubtaskRelation")
+  parent       Issue?        @relation("SubtaskRelation", fields: [parentId], references: [id])
+  parentId     String?
+  pullRequests PullRequest[]
+
+  // AI analysis result stored as JSON string
+  aiAnalysis String?
+
+  @@unique([projectId, number])
+  @@index([projectId])
+  @@index([assigneeId])
+  @@index([sprintId])
+  @@index([status])
+  @@index([priority])
+  @@map("issues")
+}
+
+// ─────────────────────────────────────────────
+// Labels (Many-to-many with Issues)
+// ─────────────────────────────────────────────
+
+model Label {
+  id        String @id @default(cuid())
+  name      String
+  color     String @default("#6366f1") // Indigo default
+  projectId String
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  IssueLabel[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("labels")
+}
+
+model IssueLabel {
+  id      String @id @default(cuid())
+  issueId String
+  labelId String
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, labelId])
+  @@map("issue_labels")
+}
+
+// ─────────────────────────────────────────────
+// Comments
+// ─────────────────────────────────────────────
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  issueId   String
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issue  Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [authorId], references: [id])
+
+  @@index([issueId])
+  @@map("comments")
+}
+
+// ─────────────────────────────────────────────
+// Sprints
+// ─────────────────────────────────────────────
+
+model Sprint {
+  id        String    @id @default(cuid())
+  name      String
+  goal      String?
+  status    String    @default("PLANNING") // PLANNING, ACTIVE, COMPLETED
+  startDate DateTime?
+  endDate   DateTime?
+  projectId String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  Issue[]
+
+  @@index([projectId])
+  @@map("sprints")
+}
+
+// ─────────────────────────────────────────────
+// Attachments
+// ─────────────────────────────────────────────
+
+model Attachment {
+  id         String   @id @default(cuid())
+  filename   String
+  url        String
+  mimeType   String?
+  size       Int?
+  issueId    String
+  uploaderId String
+  createdAt  DateTime @default(now())
+
+  issue    Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  uploader User  @relation(fields: [uploaderId], references: [id])
+
+  @@index([issueId])
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────────
+// Audit Logs (Activity tracking)
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String // CREATED, UPDATED, DELETED, STATUS_CHANGED, ASSIGNED, etc.
+  entityType String // ISSUE, PROJECT, SPRINT, COMMENT, etc.
+  entityId   String
+  userId     String
+  metadata   String? // JSON string with old/new values
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String // ISSUE_ASSIGNED, ISSUE_COMMENTED, SPRINT_STARTED, MENTIONED, etc.
+  title     String
+  message   String
+  userId    String
+  isRead    Boolean  @default(false)
+  linkUrl   String? // Deep link to the relevant page
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// GitHub Repositories
+// ─────────────────────────────────────────────
+
+model Repository {
+  id             String   @id @default(cuid())
+  name           String
+  fullName       String   // e.g. "octocat/Hello-World"
+  owner          String   // e.g. "octocat"
+  githubRepoId   Int?
+  url            String
+  defaultBranch  String   @default("main")
+  authType       String   @default("PAT") // OAUTH, PAT
+  encryptedToken String?
+  webhookSecret  String?
+  projectId      String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pullRequests PullRequest[]
+
+  @@map("repositories")
+}
+
+// ─────────────────────────────────────────────
+// Pull Requests
+// ─────────────────────────────────────────────
+
+model PullRequest {
+  id           String    @id @default(cuid())
+  githubPrId   Int?
+  number       Int
+  title        String
+  url          String
+  branch       String
+  targetBranch String    @default("main")
+  state        String    @default("OPEN") // OPEN, CLOSED, MERGED
+  authorName   String?
+  authorAvatar String?
+  repositoryId String
+  issueId      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  mergedAt     DateTime?
+  closedAt     DateTime?
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  issue      Issue?      @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, number])
+  @@index([repositoryId])
+  @@index([issueId])
+  @@map("pull_requests")
+}

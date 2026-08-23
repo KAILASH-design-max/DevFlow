@@ -1,0 +1,90 @@
+version: "3.8"
+
+services:
+  # ─── PostgreSQL Database ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: devflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devflow_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-devflow_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - devflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devflow -d devflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - devflow-net
+
+  # ─── Express API Backend ──────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: devflow-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-devflow}:${POSTGRES_PASSWORD:-devflow_secret}@postgres:5432/${POSTGRES_DB:-devflow_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-devflow_super_secret_production_key_change_in_prod}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      UPLOAD_DIR: uploads
+      MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-10485760}
+      DEMO_SEED: ${DEMO_SEED:-true}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - devflow_uploads:/app/apps/api/uploads
+    networks:
+      - devflow-net
+
+  # ─── Next.js Web Frontend ─────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: devflow-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_INTERNAL_URL: http://api:4000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    networks:
+      - devflow-net
+
+# ─── Persistent Named Volumes ───────────────────────────────────
+volumes:
+  devflow_postgres_data:
+    name: devflow_postgres_data
+  devflow_uploads:
+    name: devflow_uploads
+
+# ─── Docker Network ─────────────────────────────────────────────
+networks:
+  devflow-net:
+    name: devflow-net
+    driver: bridge

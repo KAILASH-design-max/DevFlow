@@ -1,0 +1,23 @@
+{
+  "name": "devflow",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "db:generate": "pnpm --filter @devflow/database db:generate",
+    "db:push": "pnpm --filter @devflow/database db:push",
+    "db:migrate": "pnpm --filter @devflow/database db:migrate",
+    "db:seed": "pnpm --filter @devflow/database db:seed",
+    "db:studio": "pnpm --filter @devflow/database db:studio",
+    "cli:build": "pnpm --filter @devflow/cli run build",
+    "cli:dev": "pnpm --filter @devflow/cli run dev",
+    "cli:link": "pnpm --filter @devflow/cli link --global",
+    "cli:run": "node apps/cli/dist/index.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
