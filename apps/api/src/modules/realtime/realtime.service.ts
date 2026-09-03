@@ -117,6 +117,23 @@ export class RealtimeService {
   }
 
   /**
+   * Broadcast a notification event to a specific user
+   */
+  static broadcastNotification(targetUserId: string, data: any) {
+    const message = `event: notification\ndata: ${JSON.stringify(data)}\n\n`;
+
+    this.clients.forEach((client) => {
+      if (client.userId && client.userId === targetUserId) {
+        try {
+          client.res.write(message);
+        } catch (err) {
+          this.removeClient(client.id);
+        }
+      }
+    });
+  }
+
+  /**
    * Get active connection count
    */
   static getStats() {

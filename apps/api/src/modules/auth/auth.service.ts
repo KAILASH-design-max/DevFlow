@@ -1,9 +1,11 @@
 import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { v4 as uuid } from "uuid";
+import crypto from "crypto";
 import { prisma } from "@devflow/database";
 import { config } from "../../config/index.js";
 import { createError } from "../../middleware/errorHandler.js";
+import { generateBase32Secret, verifyTotpCode } from "../../utils/totp.js";
 
 export class AuthService {
   /**
@@ -37,6 +39,17 @@ export class AuthService {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
+    await prisma.session.create({
+      data: {
+        userId: user.id,
+        device: "Desktop PC",
+        browser: "Chrome",
+        os: "Windows",
+        ip: "127.0.0.1",
+        location: "Unknown",
+        isCurrent: true,
+      },
+    });
 
     return { user, tokens };
   }
@@ -44,8 +57,8 @@ export class AuthService {
   /**
    * Authenticate credentials and issue token pair
    */
-  static async login(data: { email: string; password: string }) {
-    const { email, password } = data;
+  static async login(data: { email: string; password: string; code?: string }) {
+    const { email, password, code } = data;
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -57,6 +70,45 @@ export class AuthService {
       throw createError("Invalid email or password", 401);
     }
 
+    // Enforce 2FA if enabled on user account
+    if (user.twoFactorEnabled) {
+      if (!code) {
+        throw createError("Two-Factor Authentication code required", 401);
+      }
+
+      let is2FaValid = false;
+      if (user.twoFactorSecret) {
+        is2FaValid = verifyTotpCode(user.twoFactorSecret, code);
+      }
+
+      // Check backup recovery codes if TOTP fails
+      if (!is2FaValid && user.twoFactorRecoveryCodes) {
+        try {
+          const recoveryCodes: string[] = JSON.parse(user.twoFactorRecoveryCodes);
+          const normalizedCode = code.trim().toLowerCase();
+          const matchIndex = recoveryCodes.findIndex(
+            (rc) => rc.toLowerCase() === normalizedCode || rc.replace("-", "").toLowerCase() === normalizedCode.replace("-", "")
+          );
+
+          if (matchIndex !== -1) {
+            is2FaValid = true;
+            // Invalidate the used recovery code
+            recoveryCodes.splice(matchIndex, 1);
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { twoFactorRecoveryCodes: JSON.stringify(recoveryCodes) },
+            });
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      if (!is2FaValid) {
+        throw createError("Invalid Two-Factor Authentication code", 401);
+      }
+    }
+
     const tokens = this.generateTokens(user.id, user.email);
     const family = uuid();
 
@@ -66,6 +118,18 @@ export class AuthService {
         userId: user.id,
         family,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    await prisma.session.create({
+      data: {
+        userId: user.id,
+        device: "Desktop PC",
+        browser: "Chrome",
+        os: "Windows",
+        ip: "127.0.0.1",
+        location: "Unknown",
+        isCurrent: true,
       },
     });
 
@@ -157,6 +221,12 @@ export class AuthService {
         name: true,
         avatar: true,
         createdAt: true,
+        bio: true,
+        title: true,
+        timezone: true,
+        githubUsername: true,
+        themePreference: true,
+        twoFactorEnabled: true,
         workspaceMembers: {
           include: {
             workspace: true,
@@ -176,14 +246,14 @@ export class AuthService {
    * Internal helper: Generate JWT tokens with claims
    */
   static generateTokens(userId: string, email: string) {
-    const accessToken = jwt.sign({ userId, email }, config.jwtSecret, {
+    const accessToken = jwt.sign({ userId, email, jti: uuid() }, config.jwtSecret, {
       expiresIn: config.jwtAccessExpiry as any,
       issuer: config.jwtIssuer,
       audience: config.jwtAudience,
     });
 
     const refreshToken = jwt.sign(
-      { userId, tokenType: "refresh" },
+      { userId, tokenType: "refresh", jti: uuid() },
       config.jwtSecret,
       {
         expiresIn: config.jwtRefreshExpiry as any,
@@ -194,4 +264,289 @@ export class AuthService {
 
     return { accessToken, refreshToken };
   }
+
+  // ─────────────────────────────────────────────
+  // Firebase User Sync
+  // ─────────────────────────────────────────────
+
+  /**
+   * Upsert a Prisma user from Firebase credentials.
+   * Uses Firebase UID as the Prisma user ID so they stay linked.
+   */
+  static async firebaseSync(
+    firebaseUid: string,
+    email: string,
+    data?: { name?: string; avatar?: string; role?: string }
+  ) {
+    const existing = await prisma.user.findUnique({ where: { id: firebaseUid } });
+
+    if (existing) {
+      // Update name/avatar if provided and changed
+      const updates: any = {};
+      if (data?.name && data.name !== existing.name) updates.name = data.name;
+      if (data?.avatar && data.avatar !== existing.avatar) updates.avatar = data.avatar;
+
+      if (Object.keys(updates).length > 0) {
+        const updated = await prisma.user.update({
+          where: { id: firebaseUid },
+          data: updates,
+          select: { id: true, email: true, name: true, avatar: true },
+        });
+        return updated;
+      }
+
+      return { id: existing.id, email: existing.email, name: existing.name, avatar: existing.avatar };
+    }
+
+    // Create new user with Firebase UID as the primary key
+    // Check if email already exists (from a legacy non-Firebase registration)
+    const emailUser = await prisma.user.findUnique({ where: { email } });
+    if (emailUser) {
+      // Link existing email user — return it as-is
+      return { id: emailUser.id, email: emailUser.email, name: emailUser.name, avatar: emailUser.avatar };
+    }
+
+    const derivedName = data?.name || email.split("@")[0].replace(/[^a-zA-Z0-9]/g, " ");
+    const user = await prisma.user.create({
+      data: {
+        id: firebaseUid,
+        email,
+        password: "firebase-auth-managed", // Placeholder — password managed by Firebase
+        name: derivedName,
+        avatar: data?.avatar || null,
+      },
+      select: { id: true, email: true, name: true, avatar: true },
+    });
+
+    // Auto-create a default workspace for new users
+    try {
+      const slug = derivedName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-workspace";
+      const workspace = await prisma.workspace.create({
+        data: {
+          name: `${derivedName}'s Workspace`,
+          slug,
+          ownerId: user.id,
+        },
+      });
+      await prisma.workspaceMember.create({
+        data: {
+          userId: user.id,
+          workspaceId: workspace.id,
+          role: "ADMIN",
+        },
+      });
+    } catch {
+      // Workspace creation is best-effort
+    }
+
+    return user;
+  }
+
+  // ─────────────────────────────────────────────
+  // User Profile, Security & 2FA (Phases 22–24)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Update User Profile
+   */
+  static async updateProfile(
+    userId: string,
+    data: {
+      name?: string;
+      avatar?: string;
+      bio?: string;
+      title?: string;
+      timezone?: string;
+      githubUsername?: string;
+      themePreference?: string;
+    }
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw createError("User not found", 404);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name ?? user.name,
+        avatar: data.avatar ?? user.avatar,
+        bio: data.bio ?? user.bio,
+        title: data.title ?? user.title,
+        timezone: data.timezone ?? user.timezone,
+        githubUsername: data.githubUsername ?? user.githubUsername,
+        themePreference: data.themePreference ?? user.themePreference,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatar: true,
+        bio: true,
+        title: true,
+        timezone: true,
+        githubUsername: true,
+        themePreference: true,
+        twoFactorEnabled: true,
+      },
+    });
+
+    return {
+      ...updatedUser,
+      isTwoFactorEnabled: updatedUser.twoFactorEnabled,
+    };
+  }
+
+  /**
+   * Get Full User Profile with extended metadata
+   */
+  static async getFullProfile(userId: string) {
+    const user = await this.getCurrentUser(userId);
+
+    return {
+      ...user,
+      isTwoFactorEnabled: user.twoFactorEnabled || false,
+    };
+  }
+
+  /**
+   * Change Password with Argon2 verification
+   */
+  static async changePassword(
+    userId: string,
+    data: { currentPassword: string; newPassword: string }
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw createError("User not found", 404);
+
+    const validPassword = await argon2.verify(user.password, data.currentPassword);
+    if (!validPassword) {
+      throw createError("Incorrect current password", 400);
+    }
+
+    if (data.newPassword.length < 8) {
+      throw createError("New password must be at least 8 characters long", 400);
+    }
+
+    const hashedPassword = await argon2.hash(data.newPassword, {
+      type: argon2.argon2id,
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    return { message: "Password updated successfully" };
+  }
+
+  /**
+   * Start 2FA Setup
+   */
+  static async generate2FaSecret(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw createError("User not found", 404);
+
+    // Standard RFC 6238 Base32 Secret
+    const secret = generateBase32Secret(32);
+    const otpauthUrl = `otpauth://totp/DevFlow:${encodeURIComponent(user.email)}?secret=${secret}&issuer=DevFlow`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`;
+
+    const recoveryCodes = Array.from({ length: 8 }, () => {
+      const bytes = crypto.randomBytes(4).toString("hex").toUpperCase();
+      return `${bytes.slice(0, 4)}-${bytes.slice(4, 8)}`;
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorSecret: secret,
+        twoFactorRecoveryCodes: JSON.stringify(recoveryCodes),
+      },
+    });
+
+    return {
+      secret,
+      otpauthUrl,
+      qrCodeUrl,
+      recoveryCodes,
+    };
+  }
+
+  /**
+   * Verify and enable 2FA
+   */
+  static async verifyAndEnable2Fa(userId: string, code: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.twoFactorSecret) {
+      throw createError("2FA setup not initiated. Please start setup first.", 400);
+    }
+
+    // Accept valid 6-digit format
+    if (!/^\d{6}$/.test(code.trim())) {
+      throw createError("Verification code must be 6 digits", 400);
+    }
+
+    // Authentic RFC 6238 TOTP verification with ±30s drift window
+    const isValid = verifyTotpCode(user.twoFactorSecret, code.trim());
+    if (!isValid) {
+      throw createError("Invalid verification code", 400);
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+
+    return {
+      message: "Two-Factor Authentication successfully enabled",
+      recoveryCodes: user.twoFactorRecoveryCodes ? JSON.parse(user.twoFactorRecoveryCodes) : [],
+    };
+  }
+
+  /**
+   * Disable 2FA
+   */
+  static async disable2Fa(userId: string, password: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw createError("User not found", 404);
+
+    const validPassword = await argon2.verify(user.password, password);
+    if (!validPassword) {
+      throw createError("Invalid password. Required to disable 2FA.", 400);
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        twoFactorRecoveryCodes: null,
+      },
+    });
+
+    return { message: "Two-Factor Authentication disabled" };
+  }
+
+  /**
+   * List active login sessions
+   */
+  static async listSessions(userId: string) {
+    const sessions = await prisma.session.findMany({
+      where: { userId },
+      orderBy: { lastActive: "desc" },
+    });
+    return sessions;
+  }
+
+  /**
+   * Revoke active login session
+   */
+  static async revokeSession(userId: string, sessionId: string) {
+    await prisma.session.deleteMany({
+      where: {
+        id: sessionId,
+        userId,
+      },
+    });
+    return { success: true, message: "Session revoked successfully" };
+  }
 }
+

@@ -1,25 +1,24 @@
 version: "3.8"
 
 services:
-  # ─── PostgreSQL Database ──────────────────────────────────────
+  # ─── PostgreSQL Database (Production) ──────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: devflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-devflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devflow_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-devflow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-devflow}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - devflow_postgres_data:/var/lib/postgresql/data
+      - devflow_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devflow -d devflow_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-devflow}"]
       interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s
     networks:
       - devflow-net
 
@@ -36,7 +35,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-devflow}:${POSTGRES_PASSWORD:-devflow_secret}@postgres:5432/${POSTGRES_DB:-devflow_db}?schema=public
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/devflow?schema=public}
       JWT_SECRET: ${JWT_SECRET:-devflow_super_secret_production_key_change_in_prod}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
@@ -64,8 +63,7 @@ services:
     container_name: devflow-web
     restart: unless-stopped
     depends_on:
-      api:
-        condition: service_healthy
+      - api
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -78,8 +76,8 @@ services:
 
 # ─── Persistent Named Volumes ───────────────────────────────────
 volumes:
-  devflow_postgres_data:
-    name: devflow_postgres_data
+  devflow_pgdata:
+    name: devflow_pgdata
   devflow_uploads:
     name: devflow_uploads
 
@@ -88,3 +86,4 @@ networks:
   devflow-net:
     name: devflow-net
     driver: bridge
+

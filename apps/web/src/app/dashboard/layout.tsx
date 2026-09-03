@@ -31,23 +31,32 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelLeft,
+  CreditCard,
+  GitPullRequest,
+  CheckCheck,
+  FolderKanban,
+  Users,
+  Github,
+  Kanban,
 } from "lucide-react";
 import { useUiStore } from "@/lib/store";
 import CreateIssueModal from "@/components/CreateIssueModal";
+import { ReleaseNotesModal } from "@/components/ReleaseNotesModal";
+import { notificationApi, issueApi, projectApi, workspaceApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { useRealtime } from "@/lib/useRealtime";
 
-const DEMO_USERS = [
-  { id: "u1", name: "Alice Chen", role: "Engineering Lead", email: "alice@devflow.io" },
-  { id: "u2", name: "Bob Martinez", role: "Fullstack Engineer", email: "bob@devflow.io" },
-  { id: "u3", name: "Carol Zhang", role: "QA Engineer", email: "carol@devflow.io" },
-  { id: "u4", name: "David Kim", role: "DevOps Engineer", email: "david@devflow.io" },
-];
+
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/dashboard/issues", icon: ListTodo, label: "Issues", badge: 5 },
-  { href: "/dashboard/board", icon: Columns3, label: "Board" },
-  { href: "/dashboard/deployments", icon: Rocket, label: "Deployments" },
+  { href: "/dashboard/projects", icon: FolderKanban, label: "Projects" },
+  { href: "/dashboard/issues", icon: ListTodo, label: "Issues" },
+  { href: "/dashboard/board", icon: Kanban, label: "Kanban Board" },
+  { href: "/dashboard/sprints", icon: Columns3, label: "Sprints" },
+  { href: "/dashboard/team", icon: Users, label: "Team & RBAC" },
   { href: "/dashboard/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/dashboard/github", icon: Github, label: "GitHub Integration" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -93,16 +102,24 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<any>(DEMO_USERS[0]);
-  const [unreadCount, setUnreadCount] = useState(2);
+  const { signOutUser } = useAuth();
+  const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<any>({ name: "", email: "", role: "" });
+  const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsList, setNotificationsList] = useState<any[]>([]);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isReleaseNotesOpen, setIsReleaseNotesOpen] = useState(false);
   const [shortcutSearch, setShortcutSearch] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [projectsCount, setProjectsCount] = useState<number>(0);
+  const [issuesCount, setIssuesCount] = useState<number>(0);
+  const [teamCount, setTeamCount] = useState<number>(0);
   const { openCreateIssue } = useUiStore();
 
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -110,23 +127,104 @@ export default function DashboardLayout({
   const gSequenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isGActiveRef = useRef(false);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch (e) {
-        setUser(DEMO_USERS[0]);
+  const fetchSidebarStats = async () => {
+    try {
+      const storedToken = localStorage.getItem("accessToken");
+      if (!storedToken) return;
+
+      // Reset count before fetch to prevent stale data
+      setIssuesCount(0);
+      let currentWsId = "";
+      let currentMembers: any[] = [];
+      const wsRes = await workspaceApi.list().catch(() => null);
+      if (wsRes?.success && wsRes.data?.length > 0) {
+        const ws = wsRes.data[0];
+        currentWsId = ws.id;
+        if (ws.members && ws.members.length > 0) {
+          currentMembers = ws.members;
+        } else {
+          const detailRes = await workspaceApi.get(ws.id).catch(() => null);
+          if (detailRes?.success && detailRes.data?.members?.length) {
+            currentMembers = detailRes.data.members;
+          }
+        }
+        setTeamCount(currentMembers.length);
+        setWorkspaceMembers(currentMembers);
       }
-    } else {
-      localStorage.setItem("user", JSON.stringify(DEMO_USERS[0]));
-      setUser(DEMO_USERS[0]);
+
+      // Count projects
+      const dbProjects = currentWsId ? (await projectApi.list(currentWsId).catch(() => null))?.data || [] : [];
+      setProjectsCount(dbProjects.length);
+
+      // Count all active issues across projects
+      let apiIssues: any[] = [];
+      const promises = dbProjects.map((p: any) => issueApi.list(p.id).catch(() => null));
+      const results = await Promise.all(promises);
+      for (const r of results) {
+        if (r?.success && Array.isArray(r.data)) {
+          apiIssues.push(...r.data);
+        }
+      }
+
+      setIssuesCount(apiIssues.length);
+    } catch (err) {
+      console.warn("Sidebar stats fetch notice:", err);
+    }
+  };
+
+  const statsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    
+    const debouncedFetch = () => {
+      if (statsTimeoutRef.current) clearTimeout(statsTimeoutRef.current);
+      statsTimeoutRef.current = setTimeout(() => {
+        fetchSidebarStats();
+      }, 300);
+    };
+    
+    debouncedFetch();
+
+    window.addEventListener("devflow:issue_created", debouncedFetch);
+    return () => {
+      window.removeEventListener("devflow:issue_created", debouncedFetch);
+      if (statsTimeoutRef.current) clearTimeout(statsTimeoutRef.current);
+    };
+
+  }, []);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("accessToken");
+    const storedUser = localStorage.getItem("user");
+    
+    if (!storedToken || !storedUser) {
+      // Clear potentially corrupt state and redirect to login
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      router.push("/");
+      return;
+    }
+
+    try {
+      setUser(JSON.parse(storedUser));
+    } catch (e) {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      router.push("/");
+      return;
     }
 
     const savedSidebar = localStorage.getItem("isSidebarCollapsed");
     if (savedSidebar === "true") {
       setIsSidebarCollapsed(true);
     }
+
+    notificationApi.getUnreadCount().then((res) => {
+      if (res.success && res.data) {
+        setUnreadCount(res.data.unreadCount || 0);
+      }
+    }).catch(() => {});
   }, []);
 
   const toggleSidebar = () => {
@@ -266,6 +364,11 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     try {
+      await signOutUser();
+    } catch (err) {
+      console.warn("Sign out notice:", err);
+    }
+    try {
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
@@ -273,13 +376,15 @@ export default function DashboardLayout({
     } catch {
       // ignore
     }
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    router.push("/");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+    }
+    router.replace("/");
   };
 
-  const handleSwitchUser = (selected: typeof DEMO_USERS[0]) => {
+  const handleSwitchUser = (selected: any) => {
     const updated = {
       id: selected.id,
       name: selected.name,
@@ -305,10 +410,10 @@ export default function DashboardLayout({
   );
 
   const mockIssues = [
-    { id: "PHX-1042", title: "Implement OAuth2 flow for third-party integrations", status: "in_progress" },
-    { id: "PHX-1089", title: "Refactor dashboard metrics service for performance", status: "todo" },
-    { id: "PHX-1104", title: "Add AI smart label generator to issue drawer", status: "in_review" },
-    { id: "PHX-998", title: "Fix coupon validation race condition", status: "done" },
+    { id: "SS-1", title: "Checkout crashes when user applies SAVE20 coupon", status: "in_progress" },
+    { id: "SS-2", title: "Cart total shows negative value with multiple discounts", status: "todo" },
+    { id: "SS-3", title: "Implement product search with filters", status: "backlog" },
+    { id: "SS-4", title: "Payment gateway timeout after 30 seconds", status: "in_review" },
   ].filter(
     (i) =>
       i.title.toLowerCase().includes(commandQuery.toLowerCase()) ||
@@ -332,9 +437,10 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden antialiased font-sans">
+    <div suppressHydrationWarning className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden antialiased font-sans">
       {/* ─── SideNavBar ─────────────────────────────────── */}
       <aside
+        suppressHydrationWarning
         className={`${
           isSidebarCollapsed ? "w-[68px]" : "w-[260px]"
         } bg-white border-r border-slate-200 flex flex-col h-screen overflow-y-auto overflow-x-hidden transition-all duration-200 z-30 flex-shrink-0 shadow-[1px_0_4px_rgba(0,0,0,0.02)] relative group/sidebar`}
@@ -356,17 +462,6 @@ export default function DashboardLayout({
               </div>
             )}
           </div>
-
-          {!isSidebarCollapsed && (
-            <button
-              onClick={toggleSidebar}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
-              title="Close Sidebar (Press [)"
-              aria-label="Close Sidebar"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
         {/* Action Button: New Issue */}
@@ -377,7 +472,7 @@ export default function DashboardLayout({
               className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center transition-colors shadow-sm cursor-pointer"
               title="New Issue (Press C)"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
             </button>
           ) : (
             <button
@@ -420,23 +515,31 @@ export default function DashboardLayout({
                   )}
                 </div>
 
-                {!isSidebarCollapsed && item.badge !== undefined && (
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      isActive
-                        ? "bg-indigo-100 text-indigo-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
+                {(() => {
+                  if (!mounted) return null;
+                  let itemBadge: any = undefined;
+                  if (item.href === "/dashboard/issues") itemBadge = issuesCount;
+                  else if (item.href === "/dashboard/projects") itemBadge = projectsCount > 0 ? projectsCount : undefined;
+                  else if (item.href === "/dashboard/team") itemBadge = teamCount > 0 ? teamCount : undefined;
+
+                  return !isSidebarCollapsed && itemBadge !== undefined ? (
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-all ${
+                        isActive
+                          ? "bg-indigo-100 text-indigo-700 shadow-2xs"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {itemBadge}
+                    </span>
+                  ) : null;
+                })()}
               </Link>
             );
           })}
         </nav>
 
-        {/* Footer Navigation (Shortcuts, Docs, Collapse indicator) */}
+        {/* Footer Navigation (Shortcuts, Docs, Support, Collapse indicator) */}
         <div className={`p-2 border-t border-slate-100 mt-auto space-y-1 ${isSidebarCollapsed ? "text-center" : ""}`}>
           <button
             onClick={() => setIsShortcutsOpen(true)}
@@ -535,7 +638,17 @@ export default function DashboardLayout({
             {/* Notifications Dropdown */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => setIsNotifOpen(!isNotifOpen)}
+                onClick={() => {
+                  setIsNotifOpen(!isNotifOpen);
+                  if (!isNotifOpen) {
+                    notificationApi.list({ limit: 5 }).then((res) => {
+                      if (res.success && res.data) {
+                        setNotificationsList(res.data);
+                        setUnreadCount(res.unreadCount || 0);
+                      }
+                    }).catch(() => {});
+                  }
+                }}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors relative cursor-pointer"
                 title="Notifications"
               >
@@ -546,28 +659,78 @@ export default function DashboardLayout({
               </button>
 
               {isNotifOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in">
+                <div className="absolute right-0 mt-2 w-84 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in">
                   <div className="px-4 py-2.5 border-b border-slate-100 flex justify-between items-center">
-                    <span className="text-xs font-semibold text-slate-900">
-                      Notifications
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-indigo-600" /> Notifications
                     </span>
-                    <span className="font-mono text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                      2 New
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={async () => {
+                            await notificationApi.markAllRead();
+                            setUnreadCount(0);
+                            setNotificationsList((prev) => prev.map((n) => ({ ...n, isRead: true })));
+                          }}
+                          className="text-[10px] text-indigo-600 hover:underline font-semibold cursor-pointer"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <span className="font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                        {unreadCount} New
+                      </span>
+                    </div>
                   </div>
-                  <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                    <div className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer">
-                      <p className="text-xs text-slate-800">
-                        <span className="font-semibold text-slate-900">Bob Martinez</span> commented on <span className="text-indigo-600 font-medium">PHX-1042</span>
-                      </p>
-                      <span className="text-[11px] text-slate-400 mt-1 block">15 mins ago</span>
-                    </div>
-                    <div className="p-3.5 hover:bg-slate-50 transition-colors cursor-pointer">
-                      <p className="text-xs text-slate-800">
-                        <span className="font-semibold text-slate-900">AI Assistant</span> generated smart subtasks for <span className="text-indigo-600 font-medium">PHX-1089</span>
-                      </p>
-                      <span className="text-[11px] text-slate-400 mt-1 block">2 hours ago</span>
-                    </div>
+
+                  <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                    {notificationsList.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        No recent notifications
+                      </div>
+                    ) : (
+                      notificationsList.slice(0, 5).map((n) => (
+                        <Link
+                          key={n.id}
+                          href={n.linkUrl || "/dashboard/notifications"}
+                          onClick={() => {
+                            setIsNotifOpen(false);
+                            if (!n.isRead) {
+                              notificationApi.markRead(n.id).catch(() => {});
+                              setUnreadCount((prev) => Math.max(0, prev - 1));
+                            }
+                          }}
+                          className={`p-3 block hover:bg-slate-50 transition-colors ${
+                            !n.isRead ? "bg-indigo-50/30" : ""
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-semibold text-slate-900 truncate">
+                              {n.title || "Activity Alert"}
+                            </p>
+                            {!n.isRead && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0 mt-1"></span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5">
+                            {n.message}
+                          </p>
+                          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
+                            {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="p-2 border-t border-slate-100 bg-slate-50/70 text-center">
+                    <Link
+                      href="/dashboard/notifications"
+                      onClick={() => setIsNotifOpen(false)}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center justify-center gap-1 py-1"
+                    >
+                      View all in Notification Center <ArrowRight className="w-3 h-3" />
+                    </Link>
                   </div>
                 </div>
               )}
@@ -582,14 +745,24 @@ export default function DashboardLayout({
               <History className="w-4 h-4" />
             </button>
 
-            {/* Upgrade Plan Button */}
+            {/* AI Release Notes Generator Button */}
             <button
-              onClick={() => setIsUpgradeOpen(true)}
+              onClick={() => setIsReleaseNotesOpen(true)}
+              className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:via-indigo-700 hover:to-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-xs hover:shadow cursor-pointer border border-purple-500/30"
+              title="Generate Release Notes"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+              <span className="hidden sm:inline font-bold">Release Notes</span>
+            </button>
+
+            {/* Upgrade Plan Button */}
+            <Link
+              href="/dashboard/billing"
               className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Upgrade</span>
-            </button>
+            </Link>
 
             {/* User Profile & Role Switcher */}
             <div className="relative ml-1" ref={userMenuRef}>
@@ -613,11 +786,16 @@ export default function DashboardLayout({
                     </span>
                   </div>
 
+
+
                   <div className="py-1">
                     <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
                       Switch Profile Role (RBAC)
                     </div>
-                    {DEMO_USERS.map((u) => (
+                    {workspaceMembers.map((m) => {
+                      const u = m.user;
+                      if (!u) return null;
+                      return (
                       <button
                         key={u.id}
                         onClick={() => handleSwitchUser(u)}
@@ -627,11 +805,11 @@ export default function DashboardLayout({
                       >
                         <div className="flex-1 truncate">
                           <span className="block truncate font-medium">{u.name}</span>
-                          <span className="text-[10px] text-slate-400 block truncate">{u.role}</span>
+                          <span className="text-[10px] text-slate-400 block truncate">{m.role}</span>
                         </div>
                         {user.email === u.email && <UserCheck className="w-4 h-4 text-indigo-600" />}
                       </button>
-                    ))}
+                    )})}
                   </div>
 
                   <div className="border-t border-slate-100 pt-1">
@@ -979,12 +1157,13 @@ export default function DashboardLayout({
                     </li>
                   </ul>
                 </div>
-                <button
+                <Link
+                  href="/dashboard/billing"
                   onClick={() => setIsUpgradeOpen(false)}
-                  className="mt-6 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white rounded-lg transition-colors cursor-pointer shadow-sm"
+                  className="mt-6 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white rounded-lg transition-colors cursor-pointer shadow-sm text-center block"
                 >
-                  Upgrade Now
-                </button>
+                  Upgrade to Enterprise AI ($49/mo)
+                </Link>
               </div>
             </div>
           </div>
@@ -993,6 +1172,12 @@ export default function DashboardLayout({
 
       {/* Global Create Issue Modal */}
       <CreateIssueModal />
+
+      {/* Global Release Notes Generator Modal */}
+      <ReleaseNotesModal
+        isOpen={isReleaseNotesOpen}
+        onClose={() => setIsReleaseNotesOpen(false)}
+      />
     </div>
   );
 }

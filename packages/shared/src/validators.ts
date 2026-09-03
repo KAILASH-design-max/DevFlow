@@ -27,6 +27,7 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
+  code: z.string().optional(),
 });
 
 // ─────────────────────────────────────────────
@@ -94,6 +95,7 @@ export const createIssueSchema = z.object({
   storyPoints: z.number().int().min(0).max(100).optional(),
   dueDate: z.string().datetime().optional(),
   parentId: z.string().optional(),
+  aiAnalysis: z.string().optional(),
 });
 
 export const updateIssueSchema = createIssueSchema.partial().extend({
@@ -124,9 +126,9 @@ export const createCommentSchema = z.object({
 
 export const createSprintSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
-  goal: z.string().max(500).optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  goal: z.string().max(500).optional().nullable(),
+  startDate: z.string().optional().nullable(),
+  endDate: z.string().optional().nullable(),
 });
 
 export const updateSprintSchema = createSprintSchema.partial().extend({

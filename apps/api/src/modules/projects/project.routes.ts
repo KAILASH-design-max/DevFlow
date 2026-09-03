@@ -4,6 +4,7 @@ import { validate } from "../../middleware/validate.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { createProjectSchema } from "@devflow/shared";
 import { ProjectService } from "./project.service.js";
+import { verifyWorkspaceMembership, verifyProjectAccess } from "../../middleware/authorizationHelpers.js";
 
 export const projectRouter = Router();
 
@@ -19,6 +20,9 @@ projectRouter.post(
       if (!workspaceId) {
         throw createError("workspaceId query parameter is required", 400);
       }
+
+      // SECURITY: Verify user is a member of the workspace
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
 
       const project = await ProjectService.createProject(
         req.user!.userId,
@@ -43,6 +47,9 @@ projectRouter.get(
         throw createError("workspaceId query parameter is required", 400);
       }
 
+      // SECURITY: Verify user is a member of the workspace
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
+
       const projects = await ProjectService.listProjects(workspaceId);
       res.json({ success: true, data: projects });
     } catch (error) {
@@ -56,6 +63,9 @@ projectRouter.get(
   "/:projectId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Verify user has access to this project's workspace
+      await verifyProjectAccess(req.user!.userId, req.params.projectId as string);
+
       const project = await ProjectService.getProjectById(
         req.params.projectId as string
       );
@@ -71,6 +81,9 @@ projectRouter.patch(
   "/:projectId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Verify user has access (ADMIN required for updates)
+      await verifyProjectAccess(req.user!.userId, req.params.projectId as string, ["ADMIN"]);
+
       const project = await ProjectService.updateProject(
         req.params.projectId as string,
         req.body
@@ -87,6 +100,9 @@ projectRouter.delete(
   "/:projectId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Only ADMINs can delete projects
+      await verifyProjectAccess(req.user!.userId, req.params.projectId as string, ["ADMIN"]);
+
       await ProjectService.deleteProject(req.params.projectId as string);
       res.json({ success: true, message: "Project deleted" });
     } catch (error) {

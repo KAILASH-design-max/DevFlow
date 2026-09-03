@@ -17,10 +17,12 @@ declare global {
   }
 }
 
+import { adminAuth } from "../config/firebaseAdmin.js";
+
 /**
- * Middleware: Verify JWT access token from Authorization header
+ * Middleware: Verify Firebase ID token or fallback JWT access token
  */
-export function authenticate(
+export async function authenticate(
   req: Request,
   _res: Response,
   next: NextFunction
@@ -33,6 +35,29 @@ export function authenticate(
     }
 
     const token = authHeader.split(" ")[1];
+
+    // 1. Try Firebase ID Token first
+    try {
+      const decodedFirebase = await adminAuth.verifyIdToken(token);
+      let dbUserId = decodedFirebase.uid;
+      
+      if (decodedFirebase.email) {
+        const dbUser = await prisma.user.findUnique({ where: { email: decodedFirebase.email } });
+        if (dbUser) {
+          dbUserId = dbUser.id;
+        }
+      }
+
+      req.user = {
+        userId: dbUserId,
+        email: decodedFirebase.email || "",
+      };
+      return next();
+    } catch {
+      // Token not a Firebase token or Firebase verification failed, try internal JWT
+    }
+
+    // 2. Internal JWT verification
     const decoded = jwt.verify(token, config.jwtSecret, {
       issuer: config.jwtIssuer,
       audience: config.jwtAudience,

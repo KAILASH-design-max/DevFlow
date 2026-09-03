@@ -20,6 +20,8 @@ import { githubRouter } from "./modules/github/github.routes.js";
 import { attachmentRouter } from "./modules/attachments/attachment.routes.js";
 import { analyticsRouter } from "./modules/analytics/analytics.routes.js";
 import { realtimeRouter } from "./modules/realtime/realtime.routes.js";
+import { billingRouter } from "./modules/billing/billing.routes.js";
+import { deploymentRoutes } from "./modules/deployments/deployment.routes.js";
 import path from "path";
 import { StorageService } from "./services/storage.service.js";
 
@@ -64,7 +66,7 @@ app.use(
     noSniff: true,
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     xssFilter: true,
-  })
+  }) as any
 );
 
 // ─────────────────────────────────────────────
@@ -138,7 +140,8 @@ app.use("/api/", globalLimiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per 15 min
+  max: config.nodeEnv === "production" ? 10 : 1000, // relaxed for test suites
+  skip: (req) => config.nodeEnv !== "production" && (req.ip === "127.0.0.1" || req.ip === "::1" || req.ip === "::ffff:127.0.0.1"),
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -164,6 +167,16 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+app.get("/", (_req, res) => {
+  res.json({
+    success: true,
+    message: "DevFlow REST API Server",
+    webUiUrl: "http://localhost:3000",
+    dashboardUrl: "http://localhost:3000/dashboard",
+    healthCheck: "http://localhost:4000/api/health",
+  });
+});
+
 // ─────────────────────────────────────────────
 // API Routes
 // ─────────────────────────────────────────────
@@ -184,6 +197,8 @@ app.use("/api/github", githubRouter);
 app.use("/api/attachments", attachmentRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/realtime", realtimeRouter);
+app.use("/api/billing", billingRouter);
+app.use("/api", deploymentRoutes);
 
 // ─────────────────────────────────────────────
 // Static Uploads Serving

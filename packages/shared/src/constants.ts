@@ -127,3 +127,198 @@ export const KANBAN_COLUMNS: IssueStatus[] = [
   "TESTING",
   "DONE",
 ];
+
+// ─────────────────────────────────────────────
+// Subscription Plans (Phase 25)
+// ─────────────────────────────────────────────
+
+export const SUBSCRIPTION_PLANS = [
+  {
+    tier: "FREE" as const,
+    name: "Starter",
+    tagline: "Essential project tracking for small agile teams & solo devs.",
+    priceMonthly: 0,
+    priceAnnualMonthly: 0,
+    seatLimit: 5,
+    aiRequestsLimit: 50,
+    storageLimitGb: 2,
+    features: [
+      "Up to 5 team members",
+      "50 AI issue triages / month",
+      "Interactive Kanban boards & Sprints",
+      "2 GB File attachments storage",
+      "1 Connected GitHub repository",
+      "Community support",
+    ],
+  },
+  {
+    tier: "PRO" as const,
+    name: "Team Pro",
+    tagline: "Advanced AI automation and workflows for growing engineering teams.",
+    priceMonthly: 19,
+    priceAnnualMonthly: 15, // $180 billed annually
+    seatLimit: 25,
+    aiRequestsLimit: 500,
+    storageLimitGb: 25,
+    recommended: true,
+    features: [
+      "Up to 25 team members",
+      "500 AI issue triages & PR summaries / mo",
+      "Real-time WebSocket & SSE Live Sync",
+      "25 GB High-speed S3 storage",
+      "Unlimited GitHub repositories",
+      "Automated GitHub state machine sync",
+      "Lead & Cycle Time Team Analytics",
+      "Priority email & chat support",
+    ],
+  },
+  {
+    tier: "ENTERPRISE" as const,
+    name: "Enterprise AI",
+    tagline: "Maximum scale, custom SLAs, audit compliance and dedicated support.",
+    priceMonthly: 49,
+    priceAnnualMonthly: 39, // $468 billed annually
+    seatLimit: -1, // Unlimited
+    aiRequestsLimit: 5000,
+    storageLimitGb: 250,
+    features: [
+      "Unlimited team members & workspaces",
+      "5,000 AI code breakdowns & insights / mo",
+      "SLA compliance matrix & MTTR tracking",
+      "250 GB Enterprise file storage",
+      "SSO & Custom RBAC role permissions",
+      "Dedicated account manager & 99.99% SLA",
+      "Custom Webhook & CI/CD pipelines",
+      "Automated compliance audit export",
+    ],
+  },
+];
+
+// ─────────────────────────────────────────────
+// Granular RBAC Permissions Matrix (Phase 26)
+// ─────────────────────────────────────────────
+
+export const RBAC_ROLE_PERMISSIONS_MATRIX = [
+  {
+    category: "Workspace Administration",
+    action: "Edit Workspace Settings & Branding",
+    description: "Update workspace name, slug, avatar, and security policies.",
+    admin: true,
+    projectManager: false,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Workspace Administration",
+    action: "Manage Billing & Subscriptions",
+    description: "Upgrade/downgrade plans, manage credit cards, and download invoices.",
+    admin: true,
+    projectManager: false,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Team & Access Control",
+    action: "Invite Team Members & Generate Links",
+    description: "Send email invites and create shareable invite links.",
+    admin: true,
+    projectManager: true,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Team & Access Control",
+    action: "Change Member Roles & Revoke Access",
+    description: "Promote/demote members and remove users from workspace.",
+    admin: true,
+    projectManager: false,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Projects & Repositories",
+    action: "Create & Delete Projects",
+    description: "Initialize new projects and configure project keys.",
+    admin: true,
+    projectManager: true,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Projects & Repositories",
+    action: "Link GitHub Repositories & Webhooks",
+    description: "Connect GitHub PAT/OAuth and configure webhook endpoints.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Issue Tracking & Agile",
+    action: "Create & Edit Issues & Subtasks",
+    description: "Create tickets, update descriptions, and break down tasks.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: true,
+    viewer: false,
+  },
+  {
+    category: "Issue Tracking & Agile",
+    action: "Move Issues Across Kanban Columns",
+    description: "Transition issues from Backlog to In Progress, Review, and Done.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: true,
+    viewer: false,
+  },
+  {
+    category: "Issue Tracking & Agile",
+    action: "Delete Issues & Sprints",
+    description: "Permanently delete issue records or cancel active sprints.",
+    admin: true,
+    projectManager: true,
+    developer: false,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "AI & Automation",
+    action: "Execute Gemini AI Triage & PR Summaries",
+    description: "Run automated AI issue categorization, subtask generator, and PR analysis.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: true,
+    viewer: true,
+  },
+  {
+    category: "Deployments & Releases",
+    action: "Trigger Staging & Production Deployments",
+    description: "Initiate environment deployments and manage release tags.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: false,
+    viewer: false,
+  },
+  {
+    category: "Read & Audit Access",
+    action: "View Analytics, MTTR Matrix & Audit Logs",
+    description: "Read dashboards, team metrics, burndown charts, and audit trail.",
+    admin: true,
+    projectManager: true,
+    developer: true,
+    tester: true,
+    viewer: true,
+  },
+];
+
+

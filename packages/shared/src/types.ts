@@ -261,3 +261,192 @@ export interface UploadAttachmentResponse {
   attachment: AttachmentItem;
   markdownSnippet: string;
 }
+
+// ─────────────────────────────────────────────
+// Notification Types (Phase 24)
+// ─────────────────────────────────────────────
+
+export type NotificationCategory =
+  | "ASSIGNMENT"
+  | "MENTION"
+  | "STATUS_CHANGE"
+  | "PULL_REQUEST"
+  | "SLA_BREACH"
+  | "SYSTEM";
+
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title?: string;
+  message: string;
+  userId: string;
+  isRead: boolean;
+  linkUrl?: string | null;
+  actor?: {
+    id: string;
+    name: string;
+    avatar?: string | null;
+  } | null;
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
+
+export interface NotificationPreferences {
+  emailAlerts: boolean;
+  assignmentAlerts: boolean;
+  mentionAlerts: boolean;
+  prAlerts: boolean;
+  slaAlerts: boolean;
+  weeklyDigest: boolean;
+}
+
+// ─────────────────────────────────────────────
+// Billing & Subscription Types (Phase 25)
+// ─────────────────────────────────────────────
+
+export type SubscriptionPlanTier = "FREE" | "PRO" | "ENTERPRISE";
+export type BillingInterval = "MONTHLY" | "ANNUAL";
+
+export interface PlanFeature {
+  name: string;
+  included: boolean;
+  highlight?: boolean;
+}
+
+export interface PlanPricing {
+  tier: SubscriptionPlanTier;
+  name: string;
+  tagline: string;
+  priceMonthly: number;
+  priceAnnualMonthly: number; // monthly rate when billed annually
+  seatLimit: number; // -1 for unlimited
+  aiRequestsLimit: number; // monthly quota
+  storageLimitGb: number; // file storage quota
+  features: string[];
+  recommended?: boolean;
+}
+
+export interface WorkspaceSubscription {
+  workspaceId: string;
+  tier: SubscriptionPlanTier;
+  interval: BillingInterval;
+  status: "ACTIVE" | "PAST_DUE" | "CANCELED" | "TRIALING";
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+  paymentMethod?: {
+    brand: string; // "visa" | "mastercard" | "amex"
+    last4: string;
+    expMonth: number;
+    expYear: number;
+  };
+}
+
+export interface WorkspaceUsageQuota {
+  seatsUsed: number;
+  seatsLimit: number;
+  aiRequestsUsed: number;
+  aiRequestsLimit: number;
+  storageUsedMb: number;
+  storageLimitMb: number;
+  connectedReposCount: number;
+  connectedReposLimit: number;
+}
+
+export interface BillingInvoice {
+  id: string;
+  number: string;
+  amount: number;
+  currency: string;
+  status: "PAID" | "PENDING" | "FAILED";
+  date: string;
+  pdfUrl: string;
+  period: string;
+  planName: string;
+}
+
+// ─────────────────────────────────────────────
+// Workspace Management & RBAC Types (Phase 26)
+// ─────────────────────────────────────────────
+
+export interface WorkspaceSecurityPolicies {
+  enforceTwoFactor: boolean;
+  restrictProjectCreation: boolean;
+  publicIssuesRead: boolean;
+  sessionTimeoutHours: number;
+}
+
+export interface WorkspaceInvitation {
+  id: string;
+  workspaceId: string;
+  email: string;
+  role: string;
+  token: string;
+  inviteUrl: string;
+  expiresAt: string;
+  createdAt: string;
+  inviter?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+export interface RbacRoleMatrixRow {
+  category: string;
+  action: string;
+  description: string;
+  admin: boolean;
+  projectManager: boolean;
+  developer: boolean;
+  tester: boolean;
+  viewer: boolean;
+}
+
+// ─────────────────────────────────────────────
+// User Profile, Security & Preferences Types (Phases 22–24)
+// ─────────────────────────────────────────────
+
+export interface UserProfileData {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  bio?: string;
+  title?: string;
+  timezone?: string;
+  githubUsername?: string;
+  themePreference?: "light" | "dark" | "system";
+  isTwoFactorEnabled?: boolean;
+}
+
+export interface SecuritySession {
+  id: string;
+  device: string;
+  browser: string;
+  os: string;
+  ip: string;
+  location: string;
+  lastActive: string;
+  isCurrent: boolean;
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string;
+  otpauthUrl: string;
+  qrCodeUrl: string;
+  recoveryCodes: string[];
+}
+
+export interface ExtendedUserPreferences {
+  defaultView: "dashboard" | "kanban" | "issues" | "prs";
+  dateFormat: "MMM D, YYYY" | "YYYY-MM-DD" | "MM/DD/YYYY" | "DD/MM/YYYY";
+  timeFormat: "12h" | "24h";
+  theme: "light" | "dark" | "system";
+  emailAlerts: boolean;
+  soundEffects: boolean;
+  compactMode: boolean;
+}
+
+
+

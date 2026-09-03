@@ -1,6 +1,6 @@
 import { fetchWithAuth } from "./fetch";
 
-const API_BASE = "";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 // ─── Auth ───────────────────────────────────────
 export const authApi = {
@@ -27,6 +27,50 @@ export const authApi = {
     fetchWithAuth(`${API_BASE}/api/auth/logout`, {
       method: "POST",
     }),
+
+  getProfile: () => fetchWithAuth(`${API_BASE}/api/auth/profile`),
+
+  updateProfile: (data: any) =>
+    fetchWithAuth(`${API_BASE}/api/auth/profile`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    fetchWithAuth(`${API_BASE}/api/auth/change-password`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  setup2Fa: () =>
+    fetchWithAuth(`${API_BASE}/api/auth/2fa/setup`, {
+      method: "POST",
+    }),
+
+  verify2Fa: (code: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/2fa/verify`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  disable2Fa: (password: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/2fa/disable`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  getSessions: () => fetchWithAuth(`${API_BASE}/api/auth/sessions`),
+
+  revokeSession: (sessionId: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/sessions/${sessionId}`, {
+      method: "DELETE",
+    }),
+
+  firebaseSync: (data?: { name?: string; avatar?: string; role?: string }) =>
+    fetchWithAuth(`${API_BASE}/api/auth/firebase-sync`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
 };
 
 // ─── Workspaces ─────────────────────────────────
@@ -47,10 +91,58 @@ export const workspaceApi = {
       body: JSON.stringify({ email, role }),
     }),
 
-  update: (id: string, data: { name: string; description?: string }) =>
+  update: (id: string, data: { name?: string; description?: string; slug?: string }) =>
     fetchWithAuth(`${API_BASE}/api/workspaces/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+
+  updateRole: (workspaceId: string, memberId: string, role: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/members/${memberId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  removeMember: (workspaceId: string, memberId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/members/${memberId}`, {
+      method: "DELETE",
+    }),
+
+  getMembers: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}`),
+
+  getInvites: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/invites`),
+
+  createInviteLink: (workspaceId: string, role: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/invites/link`, {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    }),
+
+  revokeInvite: (workspaceId: string, inviteId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/invites/${inviteId}`, {
+      method: "DELETE",
+    }),
+
+  getSecurityPolicies: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/security`),
+
+  updateSecurityPolicies: (workspaceId: string, policies: any) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/security`, {
+      method: "PATCH",
+      body: JSON.stringify(policies),
+    }),
+
+  transferOwnership: (workspaceId: string, newOwnerId: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${workspaceId}/transfer-ownership`, {
+      method: "POST",
+      body: JSON.stringify({ newOwnerId }),
+    }),
+
+  delete: (id: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/${id}`, {
+      method: "DELETE",
     }),
 };
 
@@ -65,6 +157,40 @@ export const projectApi = {
     fetchWithAuth(`${API_BASE}/api/projects?workspaceId=${workspaceId}`, {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+};
+
+// ─── Sprints ────────────────────────────────────
+export const sprintApi = {
+  list: (projectId: string) =>
+    fetchWithAuth(`${API_BASE}/api/sprints?projectId=${projectId}`),
+
+  get: (sprintId: string) =>
+    fetchWithAuth(`${API_BASE}/api/sprints/${sprintId}`),
+
+  create: (projectId: string, data: { name: string; goal?: string; startDate?: string; endDate?: string }) =>
+    fetchWithAuth(`${API_BASE}/api/sprints?projectId=${projectId}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (sprintId: string, data: any) =>
+    fetchWithAuth(`${API_BASE}/api/sprints/${sprintId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (sprintId: string) =>
+    fetchWithAuth(`${API_BASE}/api/sprints/${sprintId}`, {
+      method: "DELETE",
+    }),
+
+  getRetrospective: (sprintId: string) =>
+    fetchWithAuth(`${API_BASE}/api/sprints/${sprintId}/retrospective`),
+
+  generateRetrospective: (sprintId: string) =>
+    fetchWithAuth(`${API_BASE}/api/sprints/${sprintId}/retrospective/generate`, {
+      method: "POST",
     }),
 };
 
@@ -99,6 +225,49 @@ export const issueApi = {
     fetchWithAuth(`${API_BASE}/api/issues/${id}`, {
       method: "DELETE",
     }),
+
+  getActivities: (id: string) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/activities`),
+
+  logTime: (id: string, timeSpentMinutes: number, description?: string) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/worklogs`, {
+      method: "POST",
+      body: JSON.stringify({ timeSpentMinutes, description }),
+    }),
+
+  getWorkLogs: (id: string) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/worklogs`),
+
+  deleteWorkLog: (id: string, workLogId: string) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/worklogs/${workLogId}`, {
+      method: "DELETE",
+    }),
+
+  attachCommit: (id: string, data: { hash: string; message: string; authorName?: string; authorAvatar?: string; url?: string; branch?: string }) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/commits`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getCommits: (id: string) =>
+    fetchWithAuth(`${API_BASE}/api/issues/${id}/commits`),
+};
+
+// ─── Comments ───────────────────────────────────
+export const commentApi = {
+  list: (issueId: string) =>
+    fetchWithAuth(`${API_BASE}/api/comments?issueId=${issueId}`),
+
+  create: (issueId: string, content: string) =>
+    fetchWithAuth(`${API_BASE}/api/comments?issueId=${issueId}`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
+  delete: (commentId: string) =>
+    fetchWithAuth(`${API_BASE}/api/comments/${commentId}`, {
+      method: "DELETE",
+    }),
 };
 
 // ─── AI ─────────────────────────────────────────
@@ -123,17 +292,17 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify({ sprintId }),
     }),
-};
 
-// ─── Comments ───────────────────────────────────
-export const commentApi = {
-  list: (issueId: string) =>
-    fetchWithAuth(`${API_BASE}/api/comments?issueId=${issueId}`),
-
-  create: (issueId: string, content: string) =>
-    fetchWithAuth(`${API_BASE}/api/comments?issueId=${issueId}`, {
+  generateSprintRetrospective: (sprintId: string) =>
+    fetchWithAuth(`${API_BASE}/api/ai/sprint-retrospective/generate`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ sprintId }),
+    }),
+
+  generateReleaseNotes: (projectId: string, sprintId?: string, targetAudience?: string, versionName?: string) =>
+    fetchWithAuth(`${API_BASE}/api/ai/release-notes/generate`, {
+      method: "POST",
+      body: JSON.stringify({ projectId, sprintId, targetAudience, versionName }),
     }),
 };
 
@@ -145,24 +314,6 @@ export const labelApi = {
   create: (projectId: string, data: { name: string; color: string }) =>
     fetchWithAuth(`${API_BASE}/api/labels?projectId=${projectId}`, {
       method: "POST",
-      body: JSON.stringify(data),
-    }),
-};
-
-// ─── Sprints ────────────────────────────────────
-export const sprintApi = {
-  list: (projectId: string) =>
-    fetchWithAuth(`${API_BASE}/api/sprints?projectId=${projectId}`),
-
-  create: (projectId: string, data: any) =>
-    fetchWithAuth(`${API_BASE}/api/sprints?projectId=${projectId}`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  update: (id: string, data: any) =>
-    fetchWithAuth(`${API_BASE}/api/sprints/${id}`, {
-      method: "PATCH",
       body: JSON.stringify(data),
     }),
 };
@@ -188,9 +339,18 @@ export const dashboardApi = {
     ),
 };
 
-// ─── Notifications ──────────────────────────────
+// ─── Notifications (Phase 24) ────────────────────
 export const notificationApi = {
-  list: () => fetchWithAuth(`${API_BASE}/api/notifications`),
+  list: (options?: { category?: string; unreadOnly?: boolean; page?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.category) params.set("category", options.category);
+    if (options?.unreadOnly) params.set("unreadOnly", "true");
+    if (options?.page) params.set("page", String(options.page));
+    if (options?.limit) params.set("limit", String(options.limit));
+    return fetchWithAuth(`${API_BASE}/api/notifications?${params}`);
+  },
+
+  getUnreadCount: () => fetchWithAuth(`${API_BASE}/api/notifications/unread-count`),
 
   markRead: (id: string) =>
     fetchWithAuth(`${API_BASE}/api/notifications/${id}/read`, {
@@ -200,6 +360,53 @@ export const notificationApi = {
   markAllRead: () =>
     fetchWithAuth(`${API_BASE}/api/notifications/read-all`, {
       method: "PATCH",
+    }),
+
+  delete: (id: string) =>
+    fetchWithAuth(`${API_BASE}/api/notifications/${id}`, {
+      method: "DELETE",
+    }),
+
+  clearAllRead: () =>
+    fetchWithAuth(`${API_BASE}/api/notifications/clear-all/read`, {
+      method: "DELETE",
+    }),
+
+  getPreferences: () => fetchWithAuth(`${API_BASE}/api/notifications/preferences`),
+
+  updatePreferences: (prefs: any) =>
+    fetchWithAuth(`${API_BASE}/api/notifications/preferences`, {
+      method: "PUT",
+      body: JSON.stringify(prefs),
+    }),
+};
+
+// ─── Billing & Subscriptions (Phase 25) ─────────
+export const billingApi = {
+  getSubscription: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/billing/subscription?workspaceId=${workspaceId}`),
+
+  getUsageQuota: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/billing/usage?workspaceId=${workspaceId}`),
+
+  checkout: (data: {
+    workspaceId: string;
+    tier: string;
+    interval: string;
+    paymentMethod?: any;
+  }) =>
+    fetchWithAuth(`${API_BASE}/api/billing/checkout`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getInvoices: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/billing/invoices?workspaceId=${workspaceId}`),
+
+  toggleCancel: (workspaceId: string) =>
+    fetchWithAuth(`${API_BASE}/api/billing/toggle-cancel`, {
+      method: "POST",
+      body: JSON.stringify({ workspaceId }),
     }),
 };
 

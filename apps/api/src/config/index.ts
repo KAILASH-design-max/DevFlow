@@ -2,15 +2,21 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 dotenv.config({ path: "../../.env" });
 
-// Generate a secure fallback JWT secret at startup (never use a hardcoded default)
-const secureFallback = crypto.randomBytes(64).toString("hex");
+// Generate a secure fallback JWT secret at startup (never use a hardcoded default in prod)
+const secureFallback = process.env.NODE_ENV === "production" 
+  ? crypto.randomBytes(64).toString("hex") 
+  : "devflow-stable-development-jwt-secret-key-123456";
 
 export const config = {
+  // Existing fields …
+  // Signing secret for temporary URLs (must be set in production)
+  urlSigningSecret: process.env.URL_SIGNING_SECRET || undefined,
+
   port: parseInt(process.env.PORT || "4000", 10),
   nodeEnv: process.env.NODE_ENV || "development",
 
   // JWT — uses env var or a one-time random secret (safe for dev, forces env config in prod)
-  jwtSecret: process.env.JWT_SECRET || secureFallback,
+  jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? crypto.randomBytes(64).toString("hex") : "devflow-stable-development-jwt-secret-key-123456"),
   jwtAccessExpiry: process.env.JWT_ACCESS_EXPIRY || "15m",
   jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || "7d",
   jwtIssuer: "devflow-api",
@@ -21,7 +27,7 @@ export const config = {
 
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000", 10),
-  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || "100", 10),
+  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || (process.env.NODE_ENV === "production" ? "100" : "1000"), 10),
 
   // AI
   aiProvider: process.env.AI_PROVIDER || "mock", // "gemini" | "openai" | "mock"
@@ -42,9 +48,25 @@ export const config = {
   apiBaseUrl: process.env.API_BASE_URL || "http://localhost:4000",
 } as const;
 
-// Warn in production if JWT_SECRET is not explicitly set
+// Throw fatal error in production if JWT_SECRET is not explicitly set
 if (config.nodeEnv === "production" && !process.env.JWT_SECRET) {
+  throw new Error(
+    "❌ FATAL: JWT_SECRET must be set in the production environment. Using a fallback random secret is insecure as it invalidates all sessions on restart."
+  );
+} else if (config.nodeEnv !== "production" && !process.env.JWT_SECRET) {
   console.warn(
     "⚠️  WARNING: JWT_SECRET is not set in environment. Using a random secret — tokens will not persist across restarts."
+  );
+}
+
+if (config.nodeEnv === "production" && (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY === "devflow-default-encryption-secret-key-32b")) {
+  throw new Error(
+    "❌ FATAL: ENCRYPTION_KEY must be securely set in the production environment."
+  );
+}
+
+if (config.nodeEnv === "production" && (!process.env.GITHUB_WEBHOOK_SECRET || process.env.GITHUB_WEBHOOK_SECRET === "devflow-webhook-secret")) {
+  throw new Error(
+    "❌ FATAL: GITHUB_WEBHOOK_SECRET must be securely set in the production environment."
   );
 }

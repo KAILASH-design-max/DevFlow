@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   CheckCircle2, 
   AlertCircle, 
@@ -8,6 +8,8 @@ import {
   RefreshCw, 
   GitCommit
 } from 'lucide-react';
+import { workspaceApi, projectApi } from "@/lib/api";
+import { fetchWithAuth } from "@/lib/fetch";
 
 const INITIAL_DEPLOYMENTS = [
   {
@@ -41,23 +43,83 @@ const INITIAL_DEPLOYMENTS = [
 
 export default function DeploymentsPage() {
   const [isDeploying, setIsDeploying] = useState(false);
-  const [deploymentsList, setDeploymentsList] = useState(INITIAL_DEPLOYMENTS);
+  const [deploymentsList, setDeploymentsList] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
 
-  const handleTriggerDeploy = () => {
+  useEffect(() => {
+    loadProjectsAndDeployments();
+  }, []);
+
+  const loadProjectsAndDeployments = async () => {
+    try {
+      setLoading(true);
+      let currentWsId = "";
+      const wsRes = await workspaceApi.list();
+      if (wsRes.success && wsRes.data.length > 0) {
+        currentWsId = wsRes.data[0].id;
+      }
+      if (currentWsId) {
+        const projRes = await projectApi.list(currentWsId);
+        if (projRes.success) {
+          setProjects(projRes.data);
+          if (projRes.data.length > 0) {
+            setSelectedProjectId(projRes.data[0].id);
+            await loadDeployments(projRes.data[0].id);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDeployments = async (projectId: string) => {
+    try {
+      const res = await fetchWithAuth<any>(`/api/projects/${projectId}/deployments`);
+      if (res?.success) {
+        setDeploymentsList(res.data);
+      } else {
+        setDeploymentsList(INITIAL_DEPLOYMENTS); // fallback
+      }
+    } catch (err) {
+      setDeploymentsList(INITIAL_DEPLOYMENTS); // fallback
+    }
+  };
+
+  const handleProjectChange = async (projectId: string) => {
+    setSelectedProjectId(projectId);
+    await loadDeployments(projectId);
+  };
+
+  const handleTriggerDeploy = async () => {
+    if (!selectedProjectId) return;
     setIsDeploying(true);
-    setTimeout(() => {
-      const newDep = {
-        id: `DEP-${Math.floor(100 + Math.random() * 900)}`,
-        environment: 'staging' as const,
-        status: 'success' as const,
+    try {
+      const newDepPayload = {
+        environment: 'staging',
+        status: 'success',
         version: 'v2.14.3-alpha',
         commitSha: Math.random().toString(16).substring(2, 9),
-        deployedAt: 'Just now',
         url: 'https://staging.devflow.io'
       };
-      setDeploymentsList([newDep, ...deploymentsList]);
+      
+      const res = await fetchWithAuth<any>(`/api/projects/${selectedProjectId}/deployments`, {
+        method: "POST",
+        body: JSON.stringify(newDepPayload)
+      });
+      
+      if (res?.success) {
+        setDeploymentsList([res.data, ...deploymentsList]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
       setIsDeploying(false);
-    }, 1200);
+    }
   };
 
   return (

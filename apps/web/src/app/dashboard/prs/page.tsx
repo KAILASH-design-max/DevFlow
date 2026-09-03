@@ -16,54 +16,7 @@ import {
 import { useEffect, useState } from 'react';
 import { workspaceApi, projectApi, githubApi } from '../../../lib/api';
 
-const MOCK_PRS = [
-  {
-    id: "PR-442",
-    title: "feat(auth): Add OAuth2 social logins and token renewal",
-    branch: "feat/oauth2-flow",
-    url: "https://github.com",
-    state: "OPEN",
-    author: { name: "Sarah Jenkins", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" },
-    createdAt: "2 hours ago",
-    additions: 342,
-    deletions: 48,
-    checksStatus: "passing" as const,
-    reviewers: [
-      { id: "r1", name: "Alice Chen", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" },
-      { id: "r2", name: "Bob Martinez", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80" }
-    ]
-  },
-  {
-    id: "PR-440",
-    title: "fix(checkout): Fix zero-total coupon discount boundary bug",
-    branch: "fix/coupon-validator",
-    url: "https://github.com",
-    state: "OPEN",
-    author: { name: "Bob Martinez", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80" },
-    createdAt: "5 hours ago",
-    additions: 84,
-    deletions: 12,
-    checksStatus: "passing" as const,
-    reviewers: [
-      { id: "r1", name: "Alice Chen", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" }
-    ]
-  },
-  {
-    id: "PR-439",
-    title: "perf(db): Optimize issue indexing and cache lookups",
-    branch: "perf/metrics-query",
-    url: "https://github.com",
-    state: "OPEN",
-    author: { name: "David Kim", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&auto=format&fit=crop&q=80" },
-    createdAt: "1 day ago",
-    additions: 156,
-    deletions: 92,
-    checksStatus: "pending" as const,
-    reviewers: [
-      { id: "r3", name: "Carol Zhang", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80" }
-    ]
-  }
-];
+// Real Pull Requests loaded from GitHub integration / Database
 
 export default function PullRequestsPage() {
   const [search, setSearch] = useState("");
@@ -139,7 +92,7 @@ export default function PullRequestsPage() {
         issue: p.issue,
         reviewers: [],
       }))
-    : MOCK_PRS;
+    : [];
 
   const filtered = activePRs.filter(
     (pr: any) =>

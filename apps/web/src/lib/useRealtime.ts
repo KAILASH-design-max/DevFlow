@@ -10,7 +10,7 @@ export interface RealtimeEvent {
   timestamp: string;
 }
 
-export function useRealtime(projectId?: string) {
+export function useRealtime(projectId?: string, onEvent?: (event: RealtimeEvent) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -20,8 +20,12 @@ export function useRealtime(projectId?: string) {
     if (typeof window === "undefined") return;
 
     try {
-      const url = `${API_BASE}/api/realtime/events${projectId ? `?projectId=${projectId}` : ""}`;
-      const es = new EventSource(url);
+      const token = localStorage.getItem("accessToken");
+      const url = new URL(`${API_BASE}/api/realtime/events`);
+      if (projectId) url.searchParams.append("projectId", projectId);
+      if (token) url.searchParams.append("token", token); // Backend support for SSE auth
+
+      const es = new EventSource(url.toString(), { withCredentials: true });
       eventSourceRef.current = es;
 
       es.onopen = () => {
@@ -41,11 +45,13 @@ export function useRealtime(projectId?: string) {
       const handleEvent = (type: string) => (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          setLastEvent({
+          const ev: RealtimeEvent = {
             type,
             data,
             timestamp: new Date().toISOString(),
-          });
+          };
+          setLastEvent(ev);
+          if (onEvent) onEvent(ev);
         } catch (err) {
           console.warn("Failed to parse realtime event:", err);
         }
@@ -61,7 +67,7 @@ export function useRealtime(projectId?: string) {
     } catch (e) {
       console.warn("SSE Connection failed:", e);
     }
-  }, [projectId]);
+  }, [projectId, onEvent]);
 
   useEffect(() => {
     connect();

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { config } from "../config/index.js";
+
 import { createError } from "../middleware/errorHandler.js";
 
 export interface StoredFile {
@@ -13,6 +14,8 @@ export interface StoredFile {
 }
 
 export class StorageService {
+  // Persistent secret for URL signing (generated once per process if not provided)
+  private static signingSecret: string = config.urlSigningSecret || crypto.randomBytes(32).toString("hex");
   private static baseUploadDir = path.resolve(process.cwd(), config.uploadDir);
 
   /**
@@ -36,6 +39,7 @@ export class StorageService {
     this.init();
 
     const targetFolder = path.join(this.baseUploadDir, folder);
+
     if (!fs.existsSync(targetFolder)) {
       fs.mkdirSync(targetFolder, { recursive: true });
     }
@@ -66,6 +70,35 @@ export class StorageService {
       size: fileBuffer.length,
     };
   }
+
+  /**
+   * Generate a signed temporary URL for a stored file.
+   * The URL includes `?sig=<hmac>&exp=<timestamp>` query parameters.
+   * The signature is HMAC‑SHA256 of `${fileUrl}|${expiry}` using a secret.
+   */
+  static generateSignedUrl(fileUrl: string, expiresInSec: number = 3600): string {
+    const expiry = Math.floor(Date.now() / 1000) + expiresInSec;
+    const secret = StorageService.signingSecret;
+    const data = `${fileUrl}|${expiry}`;
+    const sig = crypto.createHmac("sha256", secret).update(data).digest("hex");
+    const separator = fileUrl.includes("?") ? "&" : "?";
+    return `${fileUrl}${separator}sig=${sig}&exp=${expiry}`;
+  }
+
+  /**
+   * Validate a signed URL.
+   * Returns true if the signature matches and the URL has not expired.
+   */
+  static validateSignedUrl(fileUrl: string, sig: string, exp: string): boolean {
+    const now = Math.floor(Date.now() / 1000);
+    if (parseInt(exp, 10) < now) return false;
+    const secret = StorageService.signingSecret;
+    const data = `${fileUrl}|${exp}`;
+    const expected = crypto.createHmac("sha256", secret).update(data).digest("hex");
+    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  }
+
+  // (removed stray brace)
 
   /**
    * Deletes a file given its public URL or relative path

@@ -3,6 +3,7 @@ import { prisma } from "@devflow/database";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { createLabelSchema } from "@devflow/shared";
+import { verifyProjectAccess } from "../../middleware/authorizationHelpers.js";
 
 export const labelRouter = Router();
 
@@ -21,6 +22,7 @@ labelRouter.post(
         res.status(400).json({ success: false, error: "projectId is required" });
         return;
       }
+      await verifyProjectAccess(req.user!.userId, projectId);
 
       const label = await prisma.label.create({
         data: { name, color, projectId },
@@ -44,6 +46,7 @@ labelRouter.get(
         res.status(400).json({ success: false, error: "projectId is required" });
         return;
       }
+      await verifyProjectAccess(req.user!.userId, projectId);
 
       const labels = await prisma.label.findMany({
         where: { projectId },
@@ -63,7 +66,18 @@ labelRouter.delete(
   "/:labelId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await prisma.label.delete({ where: { id: req.params.labelId as string } });
+      const labelId = req.params.labelId as string;
+      const label = await prisma.label.findUnique({
+        where: { id: labelId },
+        select: { projectId: true },
+      });
+      if (!label) {
+        res.status(404).json({ success: false, error: "Label not found" });
+        return;
+      }
+      await verifyProjectAccess(req.user!.userId, label.projectId);
+
+      await prisma.label.delete({ where: { id: labelId } });
       res.json({ success: true, message: "Label deleted" });
     } catch (error) {
       next(error);

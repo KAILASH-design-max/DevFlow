@@ -46,16 +46,61 @@ aiRouter.post(
   }
 );
 
-// ─── Summarize Sprint ───────────────────────────
+// ─── Summarize PR ───────────────────────────────
 aiRouter.post(
-  "/summarize-sprint",
+  "/summarize-pr",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { sprintId } = req.body;
-      const summary = await AIService.summarizeSprint(sprintId);
-      res.json({ success: true, data: summary });
+      const { title, headBranch, baseBranch, issueKey } = req.body;
+      const summary = await AIService.summarizePR({
+        title,
+        headBranch,
+        baseBranch,
+        issueKey,
+      });
+      res.json({ success: true, data: { summary } });
     } catch (error) {
       next(error);
     }
   }
 );
+
+// ─── Sprint Retrospective Summary ───────────────
+aiRouter.post(
+  "/sprint-retrospective/generate",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sprintId } = req.body;
+      if (!sprintId) {
+        return res.status(400).json({ success: false, error: "sprintId is required" });
+      }
+      const retrospective = await AIService.generateRetrospective(sprintId);
+      res.json({ success: true, data: retrospective });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Release Notes Generator ────────────────────
+aiRouter.post(
+  "/release-notes/generate",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { projectId, sprintId, targetAudience, versionName } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ success: false, error: "projectId is required" });
+      }
+      const releaseNotes = await AIService.generateReleaseNotes({
+        projectId,
+        sprintId,
+        targetAudience,
+        versionName,
+      });
+      res.json({ success: true, data: { releaseNotes } });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+

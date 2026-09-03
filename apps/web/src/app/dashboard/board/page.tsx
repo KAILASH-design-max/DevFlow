@@ -39,7 +39,9 @@ import {
   Zap,
   Wifi,
   Sparkles,
+  Database,
 } from "lucide-react";
+import { workspaceApi, projectApi, issueApi } from "@/lib/api";
 import {
   KANBAN_COLUMNS,
   ISSUE_STATUS_CONFIG,
@@ -61,60 +63,7 @@ interface KanbanIssue {
   labels: { id: string; name: string; color: string }[];
 }
 
-// ─── Mock Data ──────────────────────────────────
-const MOCK_ISSUES: KanbanIssue[] = [
-  {
-    id: "1", number: 1, title: "Checkout crashes when user applies SAVE20 coupon", type: "BUG", status: "IN_PROGRESS", priority: "HIGH", position: 0, attachmentsCount: 2,
-    assignee: { id: "u2", name: "Bob Martinez", avatar: null },
-    labels: [{ id: "l1", name: "checkout", color: "#ef4444" }, { id: "l8", name: "coupon", color: "#f59e0b" }],
-  },
-  {
-    id: "2", number: 2, title: "Cart total shows negative value with multiple discounts", type: "BUG", status: "TODO", priority: "CRITICAL", position: 0, attachmentsCount: 1,
-    assignee: { id: "u2", name: "Bob Martinez", avatar: null },
-    labels: [{ id: "l9", name: "cart", color: "#0d9488" }, { id: "l1", name: "checkout", color: "#ef4444" }],
-  },
-  {
-    id: "3", number: 3, title: "Implement product search with filters", type: "FEATURE", status: "BACKLOG", priority: "MEDIUM", position: 0,
-    assignee: null,
-    labels: [{ id: "l10", name: "search", color: "#7c3aed" }, { id: "l5", name: "ui", color: "#0284c7" }],
-  },
-  {
-    id: "4", number: 4, title: "Payment gateway timeout after 30 seconds", type: "BUG", status: "IN_REVIEW", priority: "HIGH", position: 0,
-    assignee: { id: "u1", name: "Alice Chen", avatar: null },
-    labels: [{ id: "l2", name: "payment", color: "#ea580c" }, { id: "l4", name: "api", color: "#2563eb" }],
-  },
-  {
-    id: "5", number: 5, title: "Add order tracking page with live status updates", type: "FEATURE", status: "TODO", priority: "MEDIUM", position: 1,
-    assignee: { id: "u2", name: "Bob Martinez", avatar: null },
-    labels: [{ id: "l5", name: "ui", color: "#0284c7" }],
-  },
-  {
-    id: "6", number: 6, title: "Optimize product catalog image caching & responsive loading", type: "TASK", status: "DONE", priority: "LOW", position: 0,
-    assignee: { id: "u1", name: "Alice Chen", avatar: null },
-    labels: [{ id: "l6", name: "performance", color: "#16a34a" }],
-  },
-  {
-    id: "7", number: 7, title: "Fix login session not persisting after page refresh", type: "BUG", status: "DONE", priority: "HIGH", position: 1,
-    assignee: { id: "u1", name: "Alice Chen", avatar: null },
-    labels: [{ id: "l3", name: "auth", color: "#7c3aed" }],
-  },
-  {
-    id: "8", number: 8, title: "Add rate limiting to authentication endpoints", type: "TASK", status: "IN_PROGRESS", priority: "MEDIUM", position: 1,
-    assignee: { id: "u1", name: "Alice Chen", avatar: null },
-    labels: [{ id: "l7", name: "security", color: "#db2777" }, { id: "l4", name: "api", color: "#2563eb" }],
-  },
-  {
-    id: "9", number: 9, title: "As a user, I want to save items to a wishlist", type: "STORY", status: "BACKLOG", priority: "LOW", position: 1,
-    assignee: null,
-    labels: [{ id: "l5", name: "ui", color: "#0284c7" }],
-  },
-  {
-    id: "10", number: 10, title: "API response time exceeds 500ms for product listing", type: "BUG", status: "TODO", priority: "MEDIUM", position: 2,
-    assignee: { id: "u4", name: "David Kim", avatar: null },
-    labels: [{ id: "l4", name: "api", color: "#2563eb" }, { id: "l6", name: "performance", color: "#16a34a" }],
-  },
-];
-
+// ─── Default Issue Icon Map ─────────────────────
 const TYPE_ICONS: Record<string, any> = {
   BUG: Bug,
   TASK: ListTodo,
@@ -174,7 +123,7 @@ function IssueCard({
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 30);
-    const branchCmd = `git checkout -b ${prefix}/PHX-${issue.number}-${slug}`;
+    const branchCmd = `git checkout -b ${prefix}/SS-${issue.number}-${slug}`;
     navigator.clipboard.writeText(branchCmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -194,10 +143,10 @@ function IssueCard({
             style={{ color: typeConfig?.color || "#64748b" }}
           />
           <Link
-            href={`/dashboard/issues/PHX-${issue.number}`}
+            href={`/dashboard/issues/SS-${issue.number}`}
             className="text-xs font-mono font-bold text-slate-500 hover:text-indigo-600 hover:underline"
           >
-            PHX-{issue.number}
+            SS-{issue.number}
           </Link>
         </div>
         <div className="flex items-center gap-1">
@@ -224,7 +173,7 @@ function IssueCard({
       {/* Title */}
       <h4 className="text-xs font-semibold text-slate-900 leading-snug mb-3 line-clamp-2">
         <Link
-          href={`/dashboard/issues/PHX-${issue.number}`}
+          href={`/dashboard/issues/SS-${issue.number}`}
           className="hover:text-indigo-600 transition-colors"
         >
           {issue.title}
@@ -357,14 +306,85 @@ function KanbanColumn({
 // ─── Main Board Page ────────────────────────────
 export default function BoardPage() {
   const { openCreateIssue } = useUiStore();
-  const { isConnected, lastEvent } = useRealtime("p1");
-  const [issues, setIssues] = useState<KanbanIssue[]>(MOCK_ISSUES);
+  const { isConnected, lastEvent } = useRealtime("proj_speedyshop");
+  const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [liveToast, setLiveToast] = useState<{ id: string; message: string; time: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
-  const [selectedSprint, setSelectedSprint] = useState<string>("Sprint 42");
+  const [selectedSprint, setSelectedSprint] = useState<string>("Sprint 18");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [projectId, setProjectId] = useState<string>("proj_speedyshop");
+
+  // Initial Database Load & Firestore Real-Time Listener
+  useEffect(() => {
+    let unsubscribeFirestore: (() => void) | null = null;
+
+    const loadLiveIssues = async () => {
+      try {
+        const storedToken = localStorage.getItem("accessToken");
+        if (!storedToken) return;
+
+        let activeProjectId = "proj_speedyshop";
+
+        const wsRes = await workspaceApi.list();
+        if (wsRes.success && wsRes.data.length > 0) {
+          const projRes = await projectApi.list(wsRes.data[0].id);
+          if (projRes.success && projRes.data.length > 0) {
+            const p = projRes.data.find((item: any) => item.key === "SS") || projRes.data[0];
+            activeProjectId = p.id;
+            setProjectId(p.id);
+          }
+        }
+
+        const res = await issueApi.list(activeProjectId).catch(() => null);
+        const apiIssues = res?.success && res.data ? res.data : [];
+
+        const mappedIssues = apiIssues.map((i: any) => ({
+          id: i.id || `issue_${i.number || 1}`,
+          number: i.number || 1,
+          title: i.title,
+          type: i.type || "TASK",
+          status: i.status || "BACKLOG",
+          priority: i.priority || "MEDIUM",
+          position: i.position ?? 0,
+          attachmentsCount: i._count?.attachments || i.attachments?.length || 0,
+          assignee: i.assignee ? { id: i.assignee.id, name: i.assignee.name, avatar: i.assignee.avatar } : (i.assigneeId === "usr_alice" ? { id: "usr_alice", name: "Alice Chen", avatar: null } : null),
+          labels: (i.labels || []).map((il: any) => ({
+            id: il.label?.id || il.id || "lbl_1",
+            name: il.label?.name || il.name || String(il),
+            color: il.label?.color || il.color || "#6366f1",
+          })),
+        }));
+
+        mappedIssues.sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
+        setIssues(mappedIssues);
+      } catch (err) {
+        console.warn("API board load notice:", err);
+      }
+    };
+
+    const loadTimeoutRef = { current: null as NodeJS.Timeout | null };
+
+    const debouncedLoad = () => {
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = setTimeout(() => {
+        loadLiveIssues();
+      }, 300);
+    };
+
+    debouncedLoad();
+
+    const handleCreated = () => {
+      debouncedLoad();
+    };
+    window.addEventListener("devflow:issue_created", handleCreated);
+
+    return () => {
+      window.removeEventListener("devflow:issue_created", handleCreated);
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    };
+  }, []);
 
   // Real-Time Board Synchronization (Phase 21)
   useEffect(() => {
@@ -455,8 +475,15 @@ export default function BoardPage() {
     if (!activeIssue) return;
 
     // Determine new status
-    const overIssue = issues.find((i) => i.id === over.id);
-    const newStatus = overIssue?.status || activeIssue.status;
+    let newStatus = activeIssue.status;
+    if (KANBAN_COLUMNS.includes(over.id as any)) {
+      newStatus = over.id as any;
+    } else {
+      const overIssue = issues.find((i) => i.id === over.id);
+      if (overIssue) {
+        newStatus = overIssue.status;
+      }
+    }
 
     if (activeIssue.status !== newStatus || active.id !== over.id) {
       setIssues((prev) => {
@@ -468,6 +495,9 @@ export default function BoardPage() {
         });
         return updated;
       });
+
+      // Persist status update directly to API
+      issueApi.update(active.id as string, { status: newStatus }).catch(() => {});
     }
   }
 

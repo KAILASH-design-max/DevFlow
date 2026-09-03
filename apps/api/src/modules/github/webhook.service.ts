@@ -223,8 +223,39 @@ export class WebhookService {
    * 3. Applies status transitions per the state machine
    * 4. Writes audit logs and emits domain events
    */
-  static async handlePullRequestEvent(payload: WebhookPullRequestPayload) {
+  static async handlePullRequestEvent(payload: WebhookPullRequestPayload, deliveryId?: string) {
     const { action, pull_request: pr, repository: ghRepo } = payload;
+
+    // Webhook Idempotency & Replay Protection
+    if (deliveryId) {
+      const existing = await prisma.webhookEvent.findUnique({
+        where: {
+          provider_eventId: {
+            provider: "GITHUB",
+            eventId: deliveryId,
+          },
+        },
+      });
+
+      if (existing) {
+        return {
+          processed: true,
+          duplicate: true,
+          message: "Duplicate webhook delivery ignored (idempotent)",
+          eventId: deliveryId,
+        };
+      }
+
+      await prisma.webhookEvent.create({
+        data: {
+          provider: "GITHUB",
+          eventId: deliveryId,
+          eventType: "pull_request",
+          payload: JSON.stringify({ action, prNumber: pr?.number, repo: ghRepo?.full_name }),
+          status: "PROCESSED",
+        },
+      });
+    }
 
     // Only handle relevant actions
     const relevantActions = ["opened", "reopened", "closed"];

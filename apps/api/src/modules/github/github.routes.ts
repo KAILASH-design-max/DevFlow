@@ -46,8 +46,9 @@ githubRouter.post(
         throw createError("Invalid webhook signature", 401);
       }
 
-      // Process the event
-      const result = await WebhookService.handlePullRequestEvent(payload);
+      // Process the event with idempotency delivery ID
+      const deliveryId = req.headers["x-github-delivery"] as string | undefined;
+      const result = await WebhookService.handlePullRequestEvent(payload, deliveryId);
 
       res.status(200).json({ success: true, data: result });
     } catch (error) {
@@ -118,12 +119,16 @@ githubRouter.get(
             <script>
               if (window.opener) {
                 window.opener.postMessage(
-                  { type: 'DEVFLOW_GITHUB_OAUTH_SUCCESS', token: '${token}', projectId: '${projectId}' },
-                  '*'
+                  { 
+                    type: 'DEVFLOW_GITHUB_OAUTH_SUCCESS', 
+                    token: ${JSON.stringify(token)}, 
+                    projectId: ${JSON.stringify(projectId)} 
+                  },
+                  ${JSON.stringify(config.corsOrigin)}
                 );
                 setTimeout(() => window.close(), 1000);
               } else {
-                window.location.href = '${config.corsOrigin}/dashboard/settings?tab=integrations&github_token=${token}';
+                window.location.href = ${JSON.stringify(config.corsOrigin + '/dashboard/settings?tab=integrations&github_token=' + token)};
               }
             </script>
           </body>
@@ -238,3 +243,121 @@ githubRouter.get(
     }
   }
 );
+
+// ─── Create Pull Request (CLI / Web) ──────────────────────────
+githubRouter.post(
+  "/pull-requests",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { projectId, title, headBranch, baseBranch, body, issueKey } = req.body;
+      const { prisma } = await import("@devflow/database");
+
+      // Ensure repository exists for project or create virtual repo
+      let repo = await prisma.repository.findUnique({ where: { projectId } });
+      if (!repo) {
+        repo = await prisma.repository.create({
+          data: {
+            name: "devflow-repo",
+            fullName: "devflow/devflow-repo",
+            owner: "devflow",
+            url: "https://github.com/devflow/devflow-repo",
+            defaultBranch: baseBranch || "main",
+            projectId,
+          },
+        });
+      }
+
+      // Find linked issue if key provided
+      let linkedIssue = null;
+      if (issueKey) {
+        const parsedNum = parseInt(issueKey.replace(/\D/g, ""), 10);
+        linkedIssue = await prisma.issue.findFirst({
+          where: {
+            projectId,
+            OR: [
+              { id: issueKey },
+              ...(isNaN(parsedNum) ? [] : [{ number: parsedNum }]),
+            ],
+          },
+        });
+      }
+
+      const lastPr = await prisma.pullRequest.findFirst({
+        where: { repositoryId: repo.id },
+        orderBy: { number: "desc" },
+      });
+      const prNumber = (lastPr?.number || 100) + 1;
+
+      const pr = await prisma.pullRequest.create({
+        data: {
+          number: prNumber,
+          title,
+          url: `https://github.com/${repo.fullName}/pull/${prNumber}`,
+          branch: headBranch,
+          targetBranch: baseBranch || "main",
+          state: "OPEN",
+          authorName: req.user?.email || "Developer",
+          repositoryId: repo.id,
+          issueId: linkedIssue?.id || null,
+        },
+      });
+
+      // Update linked issue status to IN_REVIEW if linked
+      if (linkedIssue) {
+        await prisma.issue.update({
+          where: { id: linkedIssue.id },
+          data: { status: "IN_REVIEW" },
+        });
+      }
+
+      res.status(201).json({ success: true, data: pr });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Get Pull Request Detail ──────────────────────────────────
+githubRouter.get(
+  "/pull-requests/:number",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { number } = req.params;
+      const { prisma } = await import("@devflow/database");
+      const num = parseInt(number as string, 10);
+
+      const pr = await prisma.pullRequest.findFirst({
+        where: {
+          OR: [
+            ...(isNaN(num) ? [] : [{ number: num }]),
+            { id: number as string },
+          ],
+        },
+        include: {
+          issue: {
+            select: { id: true, number: true, title: true, status: true },
+          },
+          repository: {
+            select: { name: true, fullName: true, url: true },
+          },
+        },
+      });
+
+      if (!pr) {
+        throw createError("Pull Request not found", 404);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...pr,
+          headBranch: pr.branch,
+          baseBranch: pr.targetBranch,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+

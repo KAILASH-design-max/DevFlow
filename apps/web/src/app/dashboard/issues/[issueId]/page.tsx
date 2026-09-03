@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -36,13 +36,24 @@ import {
   Maximize2,
   FileCode,
   Download,
+  GitCommit as GitCommitIcon,
+  Timer,
+  PlusCircle,
+  Plus,
+  History,
+  GitPullRequest,
+  Edit3,
+  Edit2,
+  Loader2,
 } from "lucide-react";
 import {
   ISSUE_STATUS_CONFIG,
   ISSUE_PRIORITY_CONFIG,
   ISSUE_TYPE_CONFIG,
 } from "@devflow/shared";
-import { attachmentApi } from "@/lib/api";
+import { attachmentApi, issueApi, commentApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { useRealtime } from "@/lib/useRealtime";
 
 interface LocalAttachment {
   id: string;
@@ -54,322 +65,142 @@ interface LocalAttachment {
   uploaderName: string;
 }
 
-// Initial mock attachments for rich demo experience
-const INITIAL_ATTACHMENTS: LocalAttachment[] = [
-  {
-    id: "att-1",
-    filename: "checkout-crash-stacktrace.log",
-    url: "https://raw.githubusercontent.com/facebook/react/main/README.md",
-    mimeType: "text/x-log",
-    size: 24500,
-    createdAt: "2026-08-22T14:15:00Z",
-    uploaderName: "Alice Chen",
-  },
-  {
-    id: "att-2",
-    filename: "coupon-error-reproduction.png",
-    url: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1000&auto=format&fit=crop&q=80",
-    mimeType: "image/png",
-    size: 342000,
-    createdAt: "2026-08-22T14:30:00Z",
-    uploaderName: "Bob Martinez",
-  },
-];
-
-// Extended dataset of issues so every clicked issue ID resolves properly
-const ISSUES_DATABASE: Record<string, any> = {
-  "PHX-1042": {
-    id: "PHX-1042",
-    number: 1042,
-    title: "Implement OAuth2 flow for third-party integrations",
-    description:
-      "Design and build the OAuth2 authorization code grant flow with PKCE for third-party developer integrations.\n\nRequirements:\n1. Support authorization code exchange with state parameter validation\n2. Secure token storage using AES-256 encryption\n3. Rate limiting on the token exchange endpoint\n4. Interactive popup callback window with postMessage support",
-    type: "FEATURE",
-    status: "IN_PROGRESS",
-    priority: "CRITICAL",
-    assignee: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    reporter: { id: "u2", name: "Bob Martinez", role: "Fullstack Engineer", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l1", name: "auth", color: "#6366f1" },
-      { id: "l2", name: "security", color: "#db2777" },
-      { id: "l3", name: "oauth", color: "#7c3aed" },
-    ],
-    sprint: { id: "s1", name: "Sprint 42" },
-    storyPoints: 5,
-    dueDate: "2026-08-30",
-    createdAt: "2026-08-20T10:30:00Z",
-    updatedAt: "10 mins ago",
-    comments: [
-      {
-        id: "c1",
-        content: "Implemented the OAuth callback popup handler and token exchange endpoint. Testing PKCE verifier now.",
-        author: { id: "u1", name: "Alice Chen", avatar: null },
-        createdAt: "2026-08-22T14:30:00Z",
-      },
-      {
-        id: "c2",
-        content: "Make sure the redirect URI is strictly whitelisted against the CORS origin config.",
-        author: { id: "u4", name: "David Kim", avatar: null },
-        createdAt: "2026-08-22T16:15:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: "FEATURE",
-      suggestedPriority: "CRITICAL",
-      confidence: 0.98,
-      reasoning: "Core infrastructure requirement for integrations and third-party apps. High security implications.",
-      suggestedLabels: ["auth", "security", "oauth", "api"],
-      possibleCauses: [
-        "State parameter tampering if CSRF token isn't validated",
-        "Token leakage in browser URL bar if popup postMessage is not scoped to origin",
-      ],
-      reproductionSteps: [
-        "Click 'Connect with GitHub' in Settings",
-        "Authorize DevFlow on the GitHub consent screen",
-        "Verify popup closes and token is securely stored",
-      ],
-      acceptanceCriteria: [
-        "OAuth2 code exchange completes under 500ms",
-        "State parameter matches session nonce to prevent CSRF",
-        "Access tokens encrypted with AES-256-GCM at rest",
-        "Unit tests cover token expiry and refresh cycle",
-      ],
-      suggestedSubtasks: [
-        "Implement state parameter generator with HMAC verification",
-        "Add AES-256 token encryption utility",
-        "Build OAuth callback landing page with postMessage",
-        "Write end-to-end integration test",
-      ],
-    },
-  },
-  "PHX-1089": {
-    id: "PHX-1089",
-    number: 1089,
-    title: "Refactor dashboard metrics service for performance",
-    description:
-      "The dashboard metrics aggregation query currently performs sequential scans across all issue tables. Optimize with materialized counts and Redis caching.",
-    type: "TASK",
-    status: "TODO",
-    priority: "HIGH",
-    assignee: { id: "u2", name: "Bob Martinez", role: "Fullstack Engineer", avatar: null },
-    reporter: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l4", name: "performance", color: "#16a34a" },
-      { id: "l5", name: "backend", color: "#2563eb" },
-    ],
-    sprint: { id: "s1", name: "Sprint 42" },
-    storyPoints: 3,
-    dueDate: "2026-09-02",
-    createdAt: "2026-08-21T09:00:00Z",
-    updatedAt: "1 hour ago",
-    comments: [
-      {
-        id: "c1",
-        content: "Benchmarked current query at 280ms on 10k issues. Target is <35ms.",
-        author: { id: "u2", name: "Bob Martinez", avatar: null },
-        createdAt: "2026-08-21T11:00:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: "TASK",
-      suggestedPriority: "HIGH",
-      confidence: 0.92,
-      reasoning: "Performance optimization on high-traffic landing page directly impacts user experience.",
-      suggestedLabels: ["performance", "backend", "cache"],
-      possibleCauses: ["Unindexed status and priority column lookups", "N+1 relation loading on user avatars"],
-      reproductionSteps: ["Open /dashboard with network tab throttled", "Observe /api/dashboard/stats response latency"],
-      acceptanceCriteria: ["Dashboard stats endpoint returns in < 50ms", "Redis cache TTL set to 60s with cache-invalidation"],
-      suggestedSubtasks: ["Add composite index on (projectId, status)", "Implement Redis caching layer", "Load test with 50 concurrent requests"],
-    },
-  },
-  "PHX-1104": {
-    id: "PHX-1104",
-    number: 1104,
-    title: "Add AI smart label generator to issue drawer",
-    description:
-      "Integrate the AI service to automatically propose 3-5 high-relevance labels when a user types an issue title and description.",
-    type: "FEATURE",
-    status: "IN_REVIEW",
-    priority: "MEDIUM",
-    assignee: { id: "u3", name: "Carol Zhang", role: "QA Engineer", avatar: null },
-    reporter: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l6", name: "ai", color: "#8b5cf6" },
-      { id: "l7", name: "ui", color: "#0284c7" },
-      { id: "l8", name: "frontend", color: "#ec4899" },
-    ],
-    sprint: { id: "s1", name: "Sprint 42" },
-    storyPoints: 4,
-    dueDate: "2026-08-28",
-    createdAt: "2026-08-20T15:00:00Z",
-    updatedAt: "2 hours ago",
-    comments: [
-      {
-        id: "c1",
-        content: "PR #43 opened on GitHub with smart label preview chips.",
-        author: { id: "u3", name: "Carol Zhang", avatar: null },
-        createdAt: "2026-08-22T15:00:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: "FEATURE",
-      suggestedPriority: "MEDIUM",
-      confidence: 0.95,
-      reasoning: "Productivity enhancement that streamlines issue triaging.",
-      suggestedLabels: ["ai", "ui", "frontend"],
-      possibleCauses: ["Prompt latency could cause slow UI rendering if not debounced"],
-      reproductionSteps: ["Open issue modal", "Type 'Database timeout during backup'", "Observe AI label suggestions appear"],
-      acceptanceCriteria: ["Debounced 400ms before calling AI endpoint", "Displays confidence rating percentage on chips"],
-      suggestedSubtasks: ["Create AILabelChips UI component", "Connect to /api/ai/analyze-issue endpoint", "Add one-click apply label button"],
-    },
-  },
-  "PHX-1120": {
-    id: "PHX-1120",
-    number: 1120,
-    title: "Rotate team auth secrets and webhook signing keys",
-    description:
-      "Scheduled bi-monthly security maintenance to rotate JWT signing secret and GitHub webhook HMAC secret tokens.",
-    type: "TASK",
-    status: "DONE",
-    priority: "LOW",
-    assignee: { id: "u4", name: "David Kim", role: "DevOps Engineer", avatar: null },
-    reporter: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l9", name: "devops", color: "#f97316" },
-      { id: "l2", name: "security", color: "#db2777" },
-    ],
-    sprint: { id: "s1", name: "Sprint 41" },
-    storyPoints: 2,
-    dueDate: "2026-08-21",
-    createdAt: "2026-08-19T08:00:00Z",
-    updatedAt: "1 day ago",
-    comments: [
-      {
-        id: "c1",
-        content: "All signing keys rotated in production environment. No downtime observed.",
-        author: { id: "u4", name: "David Kim", avatar: null },
-        createdAt: "2026-08-21T18:00:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: "TASK",
-      suggestedPriority: "LOW",
-      confidence: 0.89,
-      reasoning: "Routine DevOps maintenance task.",
-      suggestedLabels: ["devops", "security"],
-      possibleCauses: ["Session logout for all users if active refresh tokens are not migrated"],
-      reproductionSteps: ["Update .env secret key", "Trigger webhook payload test", "Verify HMAC signature validates"],
-      acceptanceCriteria: ["Zero downtime token rotation", "AuditLog records key rotation timestamp"],
-      suggestedSubtasks: ["Generate 256-bit entropy secret", "Update production vault", "Verify webhook delivery"],
-    },
-  },
-  "PHX-998": {
-    id: "PHX-998",
-    number: 998,
-    title: "Fix coupon validation race condition on checkout",
-    description:
-      "When users rapidly double-click 'Apply Coupon', two concurrent discount promises execute, leading to negative cart totals.",
-    type: "BUG",
-    status: "DONE",
-    priority: "CRITICAL",
-    assignee: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    reporter: { id: "u3", name: "Carol Zhang", role: "QA Engineer", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l10", name: "checkout", color: "#ef4444" },
-      { id: "l11", name: "payment", color: "#eab308" },
-    ],
-    sprint: { id: "s1", name: "Sprint 41" },
-    storyPoints: 3,
-    dueDate: "2026-08-18",
-    createdAt: "2026-08-16T14:00:00Z",
-    updatedAt: "2 days ago",
-    comments: [
-      {
-        id: "c1",
-        content: "Added mutex lock on coupon validation transaction in database. Fixed in PR #38.",
-        author: { id: "u1", name: "Alice Chen", avatar: null },
-        createdAt: "2026-08-18T10:00:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: "BUG",
-      suggestedPriority: "CRITICAL",
-      confidence: 0.99,
-      reasoning: "Financial impact with negative cart totals requires immediate critical patch.",
-      suggestedLabels: ["checkout", "payment", "bug"],
-      possibleCauses: ["Lack of optimistic concurrency control on cart update", "Unbounded frontend button debouncing"],
-      reproductionSteps: ["Add $100 cart items", "Double click Apply SAVE20 within 50ms", "Verify discount is not stacked twice"],
-      acceptanceCriteria: ["Only 1 coupon transaction processed per cart", "Button disabled with loading spinner during API call"],
-      suggestedSubtasks: ["Add database transaction isolation", "Add frontend debounce lock", "Unit test concurrent apply requests"],
-    },
-  },
-};
-
-// Fallback template for any other numeric or slug IDs
-function generateFallbackIssue(id: string) {
-  const cleanId = id.toUpperCase();
-  const numMatch = id.match(/\d+/);
-  const num = numMatch ? parseInt(numMatch[0], 10) : 101;
-
-  return {
-    id: cleanId.startsWith("PHX-") ? cleanId : `PHX-${num}`,
-    number: num,
-    title: `Issue ${cleanId}: Implementation and triage for ticket #${num}`,
-    description: `Detailed engineering task for ${cleanId}.\n\nContext & Requirements:\n- Automated GitHub PR status synchronizer enabled\n- AI triage report generated with recommended subtasks and acceptance criteria\n- Branch helper configured for this ticket`,
-    type: num % 2 === 0 ? "BUG" : "FEATURE",
-    status: num % 3 === 0 ? "IN_REVIEW" : num % 2 === 0 ? "IN_PROGRESS" : "TODO",
-    priority: num % 4 === 0 ? "CRITICAL" : "HIGH",
-    assignee: { id: "u1", name: "Alice Chen", role: "Engineering Lead", avatar: null },
-    reporter: { id: "u2", name: "Bob Martinez", role: "Fullstack Engineer", avatar: null },
-    project: { id: "p1", name: "Project Phoenix", key: "PHX" },
-    labels: [
-      { id: "l1", name: "frontend", color: "#6366f1" },
-      { id: "l2", name: "api", color: "#0284c7" },
-    ],
-    sprint: { id: "s1", name: "Sprint 42" },
-    storyPoints: 3,
-    dueDate: "2026-09-05",
-    createdAt: "2026-08-20T10:00:00Z",
-    updatedAt: "Just now",
-    comments: [
-      {
-        id: "c1",
-        content: "Issue initialized and linked with DevFlow automation pipeline.",
-        author: { id: "u1", name: "Alice Chen", avatar: null },
-        createdAt: "2026-08-22T12:00:00Z",
-      },
-    ],
-    aiAnalysis: {
-      suggestedCategory: num % 2 === 0 ? "BUG" : "FEATURE",
-      suggestedPriority: "HIGH",
-      confidence: 0.94,
-      reasoning: "AI categorized this item based on pattern matching with recent codebase changes.",
-      suggestedLabels: ["api", "frontend", "automation"],
-      possibleCauses: ["Edge case validation check needed in controller"],
-      reproductionSteps: ["Run test suite: pnpm test", "Inspect related component"],
-      acceptanceCriteria: ["All tests pass with 100% assertions", "PR linked and verified on GitHub"],
-      suggestedSubtasks: ["Implement core logic", "Write unit tests", "Submit PR with linked issue key"],
-    },
-  };
-}
-
 export default function IssueDetailPage() {
+  const { user } = useAuth();
   const params = useParams();
-  const rawId = typeof params?.issueId === "string" ? params.issueId : "PHX-1042";
+  const rawId = typeof params?.issueId === "string" ? params.issueId : "SS-1";
 
-  // Resolve issue data
-  const baseData = ISSUES_DATABASE[rawId] || generateFallbackIssue(rawId);
-
-  const [issue] = useState(baseData);
-  const [activeTab, setActiveTab] = useState<"comments" | "attachments" | "subtasks" | "activity">("comments");
+  const [issue, setIssue] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<
+    "comments" | "attachments" | "subtasks" | "commits" | "worklogs" | "activity"
+  >("comments");
   const [newComment, setNewComment] = useState("");
-  const [comments, setComments] = useState<any[]>(baseData.comments || []);
-  const [attachments, setAttachments] = useState<LocalAttachment[]>(INITIAL_ATTACHMENTS);
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [comments, setComments] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<LocalAttachment[]>([]);
+  const [workLogs, setWorkLogs] = useState<any[]>([]);
+  const [gitCommits, setGitCommits] = useState<any[]>([]);
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [editedDesc, setEditedDesc] = useState("");
+  const [savingDesc, setSavingDesc] = useState(false);
+
+  useEffect(() => {
+    const fetchLiveIssue = async () => {
+      try {
+        let loadedData: any = null;
+
+        // 1. Try API
+        const res = await issueApi.get(rawId).catch(() => null);
+        if (res?.success && res.data) {
+          loadedData = res.data;
+        }
+
+        if (loadedData) {
+          const fallbackSpecs = `### Technical Specifications & Requirements
+• Implementation of requirements for ticket ${loadedData.id || rawId}
+• Complete parameter validation, type safety, and robust error handling
+• Responsive UI flow with accessible controls
+
+### Acceptance Criteria
+- [ ] Core business logic executed and verified
+- [ ] Automated regression tests passing
+- [ ] Code review completed and merged to main branch`;
+
+          const resolvedDescription = (loadedData.description && loadedData.description.trim())
+            ? loadedData.description
+            : fallbackSpecs;
+
+          setIssue({
+            ...loadedData,
+            description: resolvedDescription,
+            labels: loadedData.labels?.map((l: any) => l.label || l) || [],
+          });
+          setEditedDesc(resolvedDescription);
+
+          if (loadedData.comments && loadedData.comments.length > 0) {
+            setComments(loadedData.comments);
+          }
+        } else {
+          setIssue(null);
+        }
+
+        // Fetch persisted comments, worklogs, commits, attachments from API
+        const targetId = loadedData?.id || rawId;
+        const [apiCommentsRes, apiWorkLogsRes, apiCommitsRes] = await Promise.all([
+          commentApi.list(targetId).catch(() => null),
+          issueApi.getWorkLogs(targetId).catch(() => null),
+          issueApi.getCommits(targetId).catch(() => null),
+        ]);
+
+        // Merge Comments
+        const apiComments = apiCommentsRes?.success && Array.isArray(apiCommentsRes.data) ? apiCommentsRes.data : [];
+        const combined = [...(loadedData?.comments || [])];
+        const seenIds = new Set(combined.map((c) => c.id));
+
+        for (const c of apiComments) {
+          if (!seenIds.has(c.id)) {
+            seenIds.add(c.id);
+            combined.push(c);
+          }
+        }
+        if (combined.length > 0) setComments(combined);
+
+        // Merge Work Logs
+        const apiWorkLogs = apiWorkLogsRes?.success && Array.isArray(apiWorkLogsRes.data) ? apiWorkLogsRes.data : [];
+        if (apiWorkLogs.length > 0) setWorkLogs(apiWorkLogs);
+
+        // Merge Commits
+        const apiCommits = apiCommitsRes?.success && Array.isArray(apiCommitsRes.data) ? apiCommitsRes.data : [];
+        if (apiCommits.length > 0) setGitCommits(apiCommits);
+
+        // Merge Attachments
+        if (loadedData?.attachments && loadedData.attachments.length > 0) {
+          setAttachments(loadedData.attachments);
+        }
+      } catch (err) {
+        console.warn("Issue detail fetch notice:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLiveIssue();
+  }, [rawId]);
+
+  const handleSaveDescription = async () => {
+    try {
+      setSavingDesc(true);
+      const newDesc = editedDesc.trim();
+      setIssue((prev: any) => ({ ...prev, description: newDesc }));
+
+      const targetId = issue.rawId || issue.id || rawId;
+      await issueApi.update(targetId, { description: newDesc }).catch(() => {});
+      setIsEditingDesc(false);
+    } catch (err) {
+      console.warn("Failed to save description:", err);
+    } finally {
+      setSavingDesc(false);
+    }
+  };
+  const [activities, setActivities] = useState<any[]>([
+    { id: "act-1", type: "STATUS_CHANGE", message: "Status updated to IN_PROGRESS", authorName: "Alice Chen", createdAt: "2026-08-23T10:00:00Z" },
+    { id: "act-2", type: "COMMIT_ATTACHED", message: "Git Commit a4f8b1c attached by Alice Chen", authorName: "Alice Chen", createdAt: "2026-08-23T11:20:00Z" },
+    { id: "act-3", type: "WORK_LOGGED", message: "Logged 2h 0m of work", authorName: "Alice Chen", createdAt: "2026-08-23T11:00:00Z" },
+    { id: "act-4", type: "WORK_LOGGED", message: "Logged 1h 30m of work", authorName: "Bob Martinez", createdAt: "2026-08-23T15:30:00Z" },
+  ]);
+
+  // Modals state
+  const [isLogWorkOpen, setIsLogWorkOpen] = useState(false);
+  const [logHours, setLogHours] = useState("1");
+  const [logMinutes, setLogMinutes] = useState("30");
+  const [logDescription, setLogDescription] = useState("");
+
+  const [isAttachCommitOpen, setIsAttachCommitOpen] = useState(false);
+  const [commitHash, setCommitHash] = useState("");
+  const [commitMsg, setCommitMsg] = useState("");
+  const [commitBranch, setCommitBranch] = useState(`feat/${rawId}-oauth-flow`);
+
   const [acceptedSections, setAcceptedSections] = useState<Set<string>>(new Set(["causes", "criteria"]));
   const [completedSubtasks, setCompletedSubtasks] = useState<Set<number>>(new Set([0]));
   const [copiedBranch, setCopiedBranch] = useState(false);
@@ -379,6 +210,123 @@ export default function IssueDetailPage() {
   const [logPreview, setLogPreview] = useState<{ filename: string; content: string } | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const originalEstimateMinutes = (issue?.storyPoints || 3) * 240; // 4h per story point
+  const totalLoggedMinutes = workLogs.reduce((sum, item) => sum + (item.timeSpentMinutes || 0), 0);
+  const remainingMinutes = Math.max(0, originalEstimateMinutes - totalLoggedMinutes);
+  const progressPercent = Math.min(100, Math.round((totalLoggedMinutes / originalEstimateMinutes) * 100));
+
+  const handleStatusUpdate = async (newStatus: string) => {
+    if (!issue) return;
+    setIssue((prev: any) => ({ ...prev, status: newStatus }));
+    const targetId = issue.rawId || issue.id || rawId;
+    await issueApi.update(targetId, { status: newStatus }).catch(() => {});
+    const newAct = {
+      id: `act-${Date.now()}`,
+      type: "STATUS_CHANGE",
+      message: `Status updated to ${newStatus.replace("_", " ")}`,
+      authorName: user?.name || "Alice Chen",
+      createdAt: new Date().toISOString(),
+    };
+    setActivities((prev) => [newAct, ...prev]);
+  };
+
+  const handlePriorityUpdate = async (newPriority: string) => {
+    if (!issue) return;
+    setIssue((prev: any) => ({ ...prev, priority: newPriority }));
+    const targetId = issue.rawId || issue.id || rawId;
+    await issueApi.update(targetId, { priority: newPriority }).catch(() => {});
+    const newAct = {
+      id: `act-${Date.now()}`,
+      type: "STATUS_CHANGE",
+      message: `Priority updated to ${newPriority}`,
+      authorName: user?.name || "Alice Chen",
+      createdAt: new Date().toISOString(),
+    };
+    setActivities((prev) => [newAct, ...prev]);
+  };
+
+  const handleLogWorkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const h = parseInt(logHours, 10) || 0;
+    const m = parseInt(logMinutes, 10) || 0;
+    const totalMins = h * 60 + m;
+    if (totalMins <= 0) return;
+
+    const currentUserName = user?.name || "Alice Chen";
+    const currentUserId = user?.id || "usr_alice";
+    const targetId = issue.rawId || issue.id || rawId;
+
+    const newLog = {
+      id: `wl-${Date.now()}`,
+      timeSpentMinutes: totalMins,
+      description: logDescription.trim() || "Work log update",
+      user: { name: currentUserName, role: "Engineering Lead" },
+      createdAt: new Date().toISOString(),
+    };
+
+    setWorkLogs((prev) => [newLog, ...prev]);
+    setActivities((prev) => [
+      {
+        id: `act-${Date.now()}`,
+        type: "WORK_LOGGED",
+        message: `Logged ${h}h ${m}m of work (${logDescription.trim() || "Work log update"})`,
+        authorName: currentUserName,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    // Persist to API
+    issueApi.logTime(targetId, totalMins, logDescription).catch(() => {});
+
+    setIsLogWorkOpen(false);
+    setLogHours("1");
+    setLogMinutes("0");
+    setLogDescription("");
+  };
+
+  const handleAttachCommitSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commitHash.trim() || !commitMsg.trim()) return;
+
+    const currentUserName = user?.name || "Alice Chen";
+    const targetId = issue.rawId || issue.id || rawId;
+    const cleanHash = commitHash.trim().slice(0, 7);
+    const newCommit = {
+      id: `gc-${Date.now()}`,
+      hash: cleanHash,
+      message: commitMsg.trim(),
+      authorName: currentUserName,
+      branch: commitBranch.trim() || `feat/${issue.id}`,
+      url: `https://github.com/devflow-org/core-api/commit/${cleanHash}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    setGitCommits((prev) => [newCommit, ...prev]);
+    setActivities((prev) => [
+      {
+        id: `act-${Date.now()}`,
+        type: "COMMIT_ATTACHED",
+        message: `Git Commit ${cleanHash} attached ("${commitMsg.trim()}")`,
+        authorName: currentUserName,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    // Persist to API
+    issueApi.attachCommit(targetId, {
+      hash: cleanHash,
+      message: commitMsg.trim(),
+      branch: commitBranch.trim(),
+      authorName: currentUserName,
+    }).catch(() => {});
+
+    setIsAttachCommitOpen(false);
+    setCommitHash("");
+    setCommitMsg("");
+  };
 
   const toggleAccepted = (section: string) => {
     setAcceptedSections((prev) => {
@@ -404,19 +352,61 @@ export default function IssueDetailPage() {
     });
   };
 
-  const handleAddComment = (e: React.FormEvent) => {
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || isPostingComment) return;
 
+    const contentText = newComment.trim();
+    const currentUserName = user?.name || "Alice Chen";
+    const currentUserId = user?.id || "usr_alice";
+    const targetIssueId = issue.rawId || issue.id || rawId;
+
+    setIsPostingComment(true);
+
+    const tempId = `c-${Date.now()}`;
     const comment = {
-      id: `c-${Date.now()}`,
-      content: newComment.trim(),
-      author: { id: "u-current", name: "Alice Chen (You)", avatar: null },
+      id: tempId,
+      issueId: targetIssueId,
+      content: contentText,
+      author: { id: currentUserId, name: currentUserName, avatar: user?.avatar || null },
       createdAt: new Date().toISOString(),
     };
 
     setComments((prev) => [...prev, comment]);
     setNewComment("");
+
+    // Add to activity timeline
+    const newAct = {
+      id: `act-${Date.now()}`,
+      type: "COMMENT",
+      message: `Commented: "${contentText.length > 45 ? contentText.slice(0, 45) + "..." : contentText}"`,
+      authorName: currentUserName,
+      createdAt: new Date().toISOString(),
+    };
+    setActivities((prev) => [newAct, ...prev]);
+
+    try {
+      // 1. Save to backend API
+      const res = await commentApi.create(targetIssueId, contentText).catch(() => null);
+      if (res?.success && res.data?.id) {
+        setComments((prev) =>
+          prev.map((c) => (c.id === tempId ? { ...c, id: res.data.id } : c))
+        );
+      }
+    } catch (err) {
+      console.warn("Comment creation notice:", err);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
+    try {
+      await commentApi.delete(commentId).catch(() => null);
+    } catch (err) {
+      console.warn("Comment deletion notice:", err);
+    }
   };
 
   const handleCopyBranch = () => {
@@ -507,6 +497,37 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 animate-fade-in h-[50vh]">
+        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-4" />
+        <h2 className="text-sm font-semibold text-slate-800">Loading Issue...</h2>
+        <p className="text-xs text-slate-500 mt-1">Fetching data from the server</p>
+      </div>
+    );
+  }
+
+  if (!issue) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 animate-fade-in text-center h-[50vh]">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4 shadow-inner">
+          <AlertTriangle className="w-8 h-8" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 mb-2">Issue Not Found</h2>
+        <p className="text-xs text-slate-500 max-w-sm mb-6">
+          The issue <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">{rawId}</span> does not exist or you don't have permission to view it.
+        </p>
+        <Link 
+          href="/dashboard/issues" 
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-md transition-all flex items-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Issues
+        </Link>
+      </div>
+    );
+  }
+
   const statusConfig = ISSUE_STATUS_CONFIG[issue.status as keyof typeof ISSUE_STATUS_CONFIG] || {
     label: issue.status,
     color: "#6366f1",
@@ -528,7 +549,7 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
     FEATURE: Rocket,
     STORY: BookOpen,
   };
-  const TypeIcon = TYPE_ICONS[issue.type] || ListTodo;
+  const TypeIcon = TYPE_ICONS[issue?.type] || ListTodo;
 
   return (
     <div className="space-y-6 animate-fade-in max-w-7xl mx-auto text-slate-900 pb-16">
@@ -596,32 +617,44 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
             {typeConfig.label}
           </span>
 
-          <span
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border"
-            style={{
-              background: `${statusConfig.color}15`,
-              color: statusConfig.color,
-              borderColor: `${statusConfig.color}35`,
-            }}
-          >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ background: statusConfig.color }}
-            />
-            {statusConfig.label}
-          </span>
+          {/* Interactive Status Selector */}
+          <div className="relative inline-block">
+            <select
+              value={issue.status}
+              onChange={(e) => handleStatusUpdate(e.target.value)}
+              className="appearance-none font-semibold text-xs rounded-md pl-3 pr-7 py-1 border cursor-pointer focus:outline-none transition-colors"
+              style={{
+                background: `${statusConfig.color}15`,
+                color: statusConfig.color,
+                borderColor: `${statusConfig.color}40`,
+              }}
+            >
+              <option value="BACKLOG">Backlog</option>
+              <option value="TODO">To Do</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="IN_REVIEW">In Review</option>
+              <option value="DONE">Done</option>
+            </select>
+          </div>
 
-          <span
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border"
-            style={{
-              background: `${priorityConfig.color}15`,
-              color: priorityConfig.color,
-              borderColor: `${priorityConfig.color}35`,
-            }}
-          >
-            <span>{priorityConfig.icon}</span>
-            <span>{priorityConfig.label} Priority</span>
-          </span>
+          {/* Interactive Priority Selector */}
+          <div className="relative inline-block">
+            <select
+              value={issue.priority}
+              onChange={(e) => handlePriorityUpdate(e.target.value)}
+              className="appearance-none font-semibold text-xs rounded-md pl-3 pr-7 py-1 border cursor-pointer focus:outline-none transition-colors"
+              style={{
+                background: `${priorityConfig.color}15`,
+                color: priorityConfig.color,
+                borderColor: `${priorityConfig.color}40`,
+              }}
+            >
+              <option value="LOW">Low Priority</option>
+              <option value="MEDIUM">Medium Priority</option>
+              <option value="HIGH">High Priority</option>
+              <option value="CRITICAL">Critical Priority</option>
+            </select>
+          </div>
 
           <span className="text-xs text-slate-400 ml-auto flex items-center gap-1">
             <Clock className="w-3.5 h-3.5" />
@@ -639,13 +672,75 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
         {/* LEFT COLUMN: Description, Metadata, Attachments, Comments */}
         <div className="lg:col-span-7 space-y-6">
           {/* Description Card */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-              Description & Specifications
-            </h3>
-            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-normal">
-              {issue.description}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                Description &amp; Specifications
+              </h3>
+              {!isEditingDesc ? (
+                <button
+                  onClick={() => {
+                    setEditedDesc(issue.description || "");
+                    setIsEditingDesc(true);
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1 hover:bg-indigo-50 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Specifications</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsEditingDesc(false)}
+                    className="text-xs text-slate-500 hover:text-slate-700 font-medium px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveDescription}
+                    disabled={savingDesc}
+                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1 rounded-md shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{savingDesc ? "Saving..." : "Save"}</span>
+                  </button>
+                </div>
+              )}
             </div>
+
+            {isEditingDesc ? (
+              <div className="space-y-2 pt-1">
+                <textarea
+                  value={editedDesc}
+                  onChange={(e) => setEditedDesc(e.target.value)}
+                  placeholder="Add detailed task description, engineering specifications, acceptance criteria, and reproduction steps..."
+                  rows={8}
+                  className="w-full text-xs text-slate-800 p-3.5 rounded-lg border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono leading-relaxed bg-slate-50/50"
+                />
+              </div>
+            ) : (
+              <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap font-normal">
+                {issue.description ? (
+                  issue.description
+                ) : (
+                  <div className="py-6 text-center border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                    <p className="text-slate-500 text-xs">No technical specifications provided yet.</p>
+                    <button
+                      onClick={() => {
+                        setEditedDesc(
+                          `### Technical Specifications & Requirements\n• Implementation details for ticket ${issue.id}\n• API parameter validation and error handling\n\n### Acceptance Criteria\n- [ ] Unit tests pass with 100% assertions\n- [ ] PR linked and verified on GitHub`
+                        );
+                        setIsEditingDesc(true);
+                      }}
+                      className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-700 underline cursor-pointer"
+                    >
+                      + Generate Specifications Template
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Metadata Grid Card */}
@@ -722,6 +817,65 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
             </div>
           </div>
 
+          {/* Time Tracking Meter Card */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center">
+                  <Timer className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Time Tracking &amp; Meter
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Logged work vs estimated story point allocation
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsLogWorkOpen(true)}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Log Work</span>
+                </button>
+
+                <button
+                  onClick={() => setIsAttachCommitOpen(true)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <GitCommitIcon className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Attach Commit</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Time Tracking Meter Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <span className="text-slate-700 flex items-center gap-1">
+                  Logged: <span className="font-mono text-emerald-600 font-bold">{Math.floor(totalLoggedMinutes / 60)}h {totalLoggedMinutes % 60}m</span>
+                </span>
+                <span className="text-slate-500 font-mono">
+                  {progressPercent}% of {Math.floor(originalEstimateMinutes / 60)}h estimate
+                </span>
+                <span className="text-slate-700 flex items-center gap-1">
+                  Remaining: <span className="font-mono text-indigo-600 font-bold">{Math.floor(remainingMinutes / 60)}h {remainingMinutes % 60}m</span>
+                </span>
+              </div>
+
+              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex border border-slate-200/60 p-0.5">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Interactive Tabs: Comments | Attachments | Subtasks | Activity */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
             <div className="flex border-b border-slate-200 bg-slate-50/70 overflow-x-auto">
@@ -738,6 +892,30 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
               </button>
 
               <button
+                onClick={() => setActiveTab("commits")}
+                className={`px-4 py-3 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === "commits"
+                    ? "text-indigo-600 border-b-2 border-indigo-600 bg-white"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <GitCommitIcon className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Git Commits ({gitCommits.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("worklogs")}
+                className={`px-4 py-3 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === "worklogs"
+                    ? "text-indigo-600 border-b-2 border-indigo-600 bg-white"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Timer className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Work Logs ({workLogs.length})</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab("attachments")}
                 className={`px-4 py-3 text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                   activeTab === "attachments"
@@ -746,7 +924,7 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
                 }`}
               >
                 <Paperclip className="w-3.5 h-3.5" />
-                <span>Files & Logs ({attachments.length})</span>
+                <span>Files &amp; Logs ({attachments.length})</span>
               </button>
 
               <button
@@ -780,30 +958,53 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
               {/* TAB 1: Discussion */}
               {activeTab === "comments" && (
                 <div className="space-y-4">
-                  <div className="space-y-3">
-                    {comments.map((c: any) => (
-                      <div
-                        key={c.id}
-                        className="p-3.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-800"
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-[9px]">
-                              {c.author.name[0]}
-                            </span>
-                            {c.author.name}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {new Date(c.createdAt).toLocaleTimeString([], {
+                  {comments.length === 0 ? (
+                    <div className="py-8 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                      <MessageSquare className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                      <p className="text-xs font-semibold text-slate-700">No discussion comments yet</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Post the first update or question below to collaborate with your team.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {comments.map((c: any) => {
+                        const authorName = c.author?.name || c.authorName || "Team Member";
+                        const authorInit = authorName[0]?.toUpperCase() || "U";
+                        const timeStr = c.createdAt
+                          ? new Date(c.createdAt).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                        <p className="leading-relaxed text-slate-700">{c.content}</p>
-                      </div>
-                    ))}
-                  </div>
+                            })
+                          : "Just now";
+
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 group hover:border-slate-300 transition-colors shadow-2xs"
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-[9px] shadow-2xs">
+                                  {authorInit}
+                                </div>
+                                <span className="font-semibold text-slate-900">{authorName}</span>
+                                <span className="text-[10px] text-slate-400">{timeStr}</span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteComment(c.id)}
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-opacity p-1 rounded hover:bg-white cursor-pointer"
+                                title="Delete comment"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <p className="leading-relaxed text-slate-700 whitespace-pre-wrap pl-7">{c.content}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Add Comment Form */}
                   <form onSubmit={handleAddComment} className="flex gap-2 pt-2">
@@ -812,15 +1013,20 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
                       placeholder="Write a comment or mention @team..."
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 shadow-2xs"
+                      disabled={isPostingComment}
+                      className="flex-1 px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all"
                     />
                     <button
                       type="submit"
-                      disabled={!newComment.trim()}
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      disabled={!newComment.trim() || isPostingComment}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Post</span>
+                      {isPostingComment ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isPostingComment ? "Posting..." : "Post"}</span>
                     </button>
                   </form>
                 </div>
@@ -1013,30 +1219,153 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
                 </div>
               )}
 
-              {/* TAB 4: Audit Activity */}
+              {/* TAB: Git Commits */}
+              {activeTab === "commits" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Linked Commit Attachments ({gitCommits.length})
+                    </h4>
+                    <button
+                      onClick={() => setIsAttachCommitOpen(true)}
+                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-xs font-semibold flex items-center gap-1 border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Attach Commit
+                    </button>
+                  </div>
+
+                  {gitCommits.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic text-center py-6">
+                      No Git commits linked to this issue yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {gitCommits.map((c) => (
+                        <div
+                          key={c.id}
+                          className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-start justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                              <GitCommitIcon className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                                  {c.hash}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-slate-200 text-[10px] font-mono text-slate-700">
+                                  {c.branch}
+                                </span>
+                              </div>
+                              <p className="font-semibold text-slate-900 mt-1 truncate">
+                                {c.message}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                Committed by <span className="font-semibold">{c.authorName}</span> &bull; {new Date(c.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          {c.url && (
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded transition-colors shrink-0"
+                              title="View on GitHub"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: Work Logs */}
+              {activeTab === "worklogs" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Work Log Entries ({workLogs.length})
+                    </h4>
+                    <button
+                      onClick={() => setIsLogWorkOpen(true)}
+                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-xs font-semibold flex items-center gap-1 border border-emerald-200 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Log Time
+                    </button>
+                  </div>
+
+                  {workLogs.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic text-center py-6">
+                      No time logged on this issue yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {workLogs.map((wl) => {
+                        const hours = Math.floor(wl.timeSpentMinutes / 60);
+                        const mins = wl.timeSpentMinutes % 60;
+                        return (
+                          <div
+                            key={wl.id}
+                            className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
+                                {wl.user?.name[0] || "U"}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-slate-900">
+                                  {wl.description || "Work log entry"}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                  Logged by <span className="font-medium text-slate-700">{wl.user?.name}</span> &bull; {new Date(wl.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="font-mono font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              {hours > 0 ? `${hours}h ` : ""}{mins}m
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: Audit Activity Timeline */}
               {activeTab === "activity" && (
                 <div className="space-y-3 text-xs text-slate-600">
-                  <div className="flex items-start gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-2 h-2 rounded-full bg-indigo-600 mt-1.5" />
-                    <div>
-                      <p className="font-semibold text-slate-800">Status updated to {issue.status}</p>
-                      <p className="text-[10px] text-slate-400">Automated by GitHub Webhook Engine</p>
+                  {activities.map((act) => (
+                    <div key={act.id} className="flex items-start gap-3 pb-3 border-b border-slate-100">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                        act.type === "WORK_LOGGED"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : act.type === "COMMIT_ATTACHED"
+                          ? "bg-indigo-100 text-indigo-700"
+                          : "bg-purple-100 text-purple-700"
+                      }`}>
+                        {act.type === "WORK_LOGGED" ? (
+                          <Timer className="w-3.5 h-3.5" />
+                        ) : act.type === "COMMIT_ATTACHED" ? (
+                          <GitCommitIcon className="w-3.5 h-3.5" />
+                        ) : (
+                          <Activity className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-800">{act.message}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          By {act.authorName} &bull; {new Date(act.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-2 h-2 rounded-full bg-emerald-600 mt-1.5" />
-                    <div>
-                      <p className="font-semibold text-slate-800">AI analysis scoped and attached</p>
-                      <p className="text-[10px] text-slate-400">DevFlow AI Engine &bull; 98% confidence</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-2 h-2 rounded-full bg-purple-600 mt-1.5" />
-                    <div>
-                      <p className="font-semibold text-slate-800">Attachments uploaded</p>
-                      <p className="text-[10px] text-slate-400">checkout-crash-stacktrace.log attached</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -1197,6 +1526,152 @@ Error: Invalid minimum spend calculation in CartValidator.ts:142
             <div className="p-5 overflow-auto flex-1 font-mono text-xs leading-relaxed text-emerald-400 bg-slate-950/80 whitespace-pre-wrap select-text">
               {logPreview.content}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 3: Log Work Dialog Modal ─── */}
+      {isLogWorkOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Timer className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-base font-bold text-slate-900">Log Time Worked</h3>
+              </div>
+              <button
+                onClick={() => setIsLogWorkOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleLogWorkSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Hours</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={logHours}
+                    onChange={(e) => setLogHours(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Minutes</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={logMinutes}
+                    onChange={(e) => setLogMinutes(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Work Log Notes</label>
+                <textarea
+                  rows={3}
+                  value={logDescription}
+                  onChange={(e) => setLogDescription(e.target.value)}
+                  placeholder="Summary of work completed during this session..."
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-800 placeholder:text-slate-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLogWorkOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                >
+                  Save Work Log
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 4: Attach Commit Dialog Modal ─── */}
+      {isAttachCommitOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <GitCommitIcon className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-slate-900">Attach Git Commit</h3>
+              </div>
+              <button
+                onClick={() => setIsAttachCommitOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAttachCommitSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Commit Hash (SHA)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. a4f8b1c"
+                  value={commitHash}
+                  onChange={(e) => setCommitHash(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Commit Message</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. feat(auth): implement PKCE code verifier"
+                  value={commitMsg}
+                  onChange={(e) => setCommitMsg(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Branch Name</label>
+                <input
+                  type="text"
+                  value={commitBranch}
+                  onChange={(e) => setCommitBranch(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAttachCommitOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                >
+                  Attach Commit
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

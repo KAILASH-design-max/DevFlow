@@ -88,8 +88,8 @@ const DOC_ARTICLES: DocArticle[] = [
         steps: [
           {
             step: "Checkout & Link Issue Branch",
-            cmd: "devflow checkout PHX-1042",
-            detail: "Creates and checks out `feature/PHX-1042-oauth2-flow` with remote tracking."
+            cmd: "devflow checkout SS-1042",
+            detail: "Creates and checks out `feature/SS-1042-oauth2-flow` with remote tracking."
           },
           {
             step: "Run Local Test Suite & Linting",

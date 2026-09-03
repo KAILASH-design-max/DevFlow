@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { prisma } from "@devflow/database";
 import { authenticate } from "../../middleware/auth.js";
+import { verifyWorkspaceMembership, verifyProjectAccess } from "../../middleware/authorizationHelpers.js";
 
 export const dashboardRouter = Router();
 
@@ -17,6 +18,7 @@ dashboardRouter.get(
         res.status(400).json({ success: false, error: "workspaceId is required" });
         return;
       }
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
 
       const projectIds = (
         await prisma.project.findMany({
@@ -64,6 +66,11 @@ dashboardRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const workspaceId = req.query.workspaceId as string;
+      if (!workspaceId) {
+        res.status(400).json({ success: false, error: "workspaceId is required" });
+        return;
+      }
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
 
       const activity = await prisma.auditLog.findMany({
         where: {
@@ -96,6 +103,11 @@ dashboardRouter.get(
     try {
       const workspaceId = req.query.workspaceId as string;
       const days = parseInt(req.query.days as string) || 14;
+      if (!workspaceId) {
+        res.status(400).json({ success: false, error: "workspaceId is required" });
+        return;
+      }
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
 
       const projectIds = (
         await prisma.project.findMany({
@@ -155,6 +167,7 @@ dashboardRouter.get(
         res.status(400).json({ success: false, error: "projectId is required" });
         return;
       }
+      await verifyProjectAccess(req.user!.userId, projectId);
 
       const [byStatus, byPriority, byType] = await Promise.all([
         prisma.issue.groupBy({

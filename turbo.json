@@ -7,11 +7,11 @@
       "dependsOn": ["^db:generate"]
     },
     "build": {
-      "dependsOn": ["^build", "^db:generate"],
+      "dependsOn": ["^build"],
       "outputs": [".next/**", "dist/**"]
     },
     "typecheck": {
-      "dependsOn": ["^db:generate"]
+      "cache": false
     },
     "db:generate": {
       "cache": false

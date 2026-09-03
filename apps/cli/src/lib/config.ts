@@ -58,18 +58,7 @@ export function createApiClient(): AxiosInstance {
 
   client.interceptors.response.use(
     (res) => res,
-    (err) => {
-      const isAuthRoute = err.config?.url?.includes("/auth/login") || err.config?.url?.includes("/auth/register");
-      if (err.response?.status === 401 && !isAuthRoute) {
-        console.error(
-          chalk.hex("#ff6b6b")(
-            "\n✖ Authentication expired or required. Please run: devflow auth login\n"
-          )
-        );
-        process.exit(1);
-      }
-      return Promise.reject(err);
-    }
+    (err) => Promise.reject(err)
   );
 
   return client;

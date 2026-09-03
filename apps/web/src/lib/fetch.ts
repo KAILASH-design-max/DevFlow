@@ -1,14 +1,27 @@
 /**
- * Authenticated fetch wrapper that attaches JWT token
+ * Authenticated fetch wrapper that attaches Firebase ID token or JWT
  * and handles token refresh automatically with timeout and error resilience.
  */
-export async function fetchWithAuth(
+import { auth } from "./firebase";
+
+export async function fetchWithAuth<T = any>(
   url: string,
   options: RequestInit = {}
-): Promise<any> {
-  const token = typeof window !== "undefined"
-    ? localStorage.getItem("accessToken")
-    : null;
+): Promise<T> {
+  // Prefer fresh Firebase ID token; fall back to stored JWT
+  let token: string | null = null;
+  try {
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      token = await currentUser.getIdToken();
+    }
+  } catch {
+    // Firebase not available
+  }
+
+  if (!token && typeof window !== "undefined") {
+    token = localStorage.getItem("accessToken");
+  }
 
   const headers: Record<string, string> = {
     ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
@@ -33,6 +46,28 @@ export async function fetchWithAuth(
 
     // If 401, try to refresh the token
     if (res.status === 401 && token) {
+      // Try getting a fresh Firebase token first
+      try {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const freshToken = await currentUser.getIdToken(true);
+          headers["Authorization"] = `Bearer ${freshToken}`;
+          res = await fetch(url, {
+            ...options,
+            headers,
+            credentials: "include",
+          });
+          if (res.ok || res.status !== 401) {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Request failed with status ${res.status}`);
+            return data;
+          }
+        }
+      } catch {
+        // Firebase refresh failed
+      }
+
+      // Fallback: try JWT refresh endpoint
       const refreshRes = await fetch("/api/auth/refresh", {
         method: "POST",
         credentials: "include",

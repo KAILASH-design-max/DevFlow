@@ -118,6 +118,20 @@ export class AttachmentService {
   }
 
   /**
+   * Gets single attachment details by id
+   */
+  static async getAttachment(attachmentId: string) {
+    return await prisma.attachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        uploader: {
+          select: { id: true, name: true, avatar: true },
+        },
+      },
+    });
+  }
+
+  /**
    * Deletes an attachment and purges the file from storage
    */
   static async deleteAttachment(userId: string, attachmentId: string) {

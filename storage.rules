@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Limit maximum upload size to 25MB
+    function isValidSize() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Workspace & Issue File Attachments
+    match /workspaces/{workspaceId}/projects/{projectId}/issues/{issueId}/files/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidSize();
+    }
+
+    // User Profile Avatars (Publicly viewable, editable only by profile owner)
+    match /users/{userId}/avatars/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated() && request.auth.uid == userId && isValidSize();
+    }
+
+    // Zero-trust default: deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { AttachmentService } from "./attachment.service.js";
+import { StorageService } from "../../services/storage.service.js";
 import { config } from "../../config/index.js";
 
 export const attachmentRouter = Router();
@@ -111,9 +112,8 @@ attachmentRouter.post(
 
       // Validate MIME type against whitelist
       if (!ALLOWED_MIME_TYPES.has(parsedFile.mimetype.toLowerCase())) {
-        // Check by extension fallback
         const ext = parsedFile.filename.split(".").pop()?.toLowerCase();
-        const allowedExts = ["png", "jpg", "jpeg", "gif", "webp", "svg", "txt", "log", "json", "csv", "pdf", "zip"];
+        const allowedExts = ["png","jpg","jpeg","gif","webp","svg","txt","log","json","csv","pdf","zip"];
         if (!ext || !allowedExts.includes(ext)) {
           throw createError(
             `Unsupported file type (${parsedFile.mimetype}). Allowed types: images, logs, text, JSON, CSV, PDF.`,
@@ -129,10 +129,7 @@ attachmentRouter.post(
         size: parsedFile.buffer.length,
       });
 
-      res.status(201).json({
-        success: true,
-        data: result,
-      });
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
@@ -150,6 +147,26 @@ attachmentRouter.get(
       const { issueId } = req.params;
       const attachments = await AttachmentService.getIssueAttachments(issueId as string);
       res.json({ success: true, data: attachments });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// -------------------------------------------------------------------
+// Signed URL generation for a specific attachment
+// -------------------------------------------------------------------
+attachmentRouter.get(
+  "/:attachmentId/signed-url",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { attachmentId } = req.params;
+      const expiresIn = parseInt(req.query.expiresIn as string) || 3600;
+      const attachment = await AttachmentService.getAttachment(attachmentId as string);
+      if (!attachment) throw createError("Attachment not found", 404);
+
+      const signedUrl = StorageService.generateSignedUrl(attachment.url, expiresIn);
+      res.json({ success: true, data: { signedUrl } });
     } catch (error) {
       next(error);
     }

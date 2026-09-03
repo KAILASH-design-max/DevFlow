@@ -33,6 +33,22 @@ model User {
   auditLogs         AuditLog[]
   notifications     Notification[]
   refreshTokens     RefreshToken[]
+  workLogs         WorkLog[]
+  sessions         Session[]
+
+  // Extended Profile
+  bio              String?
+  title            String?
+  timezone         String?
+  githubUsername   String?
+  themePreference  String?
+  
+  notificationSetting NotificationSetting?
+
+  // 2FA
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  twoFactorRecoveryCodes String?
 
   @@map("users")
 }
@@ -54,6 +70,27 @@ model RefreshToken {
 }
 
 // ─────────────────────────────────────────────
+// Sessions
+// ─────────────────────────────────────────────
+
+model Session {
+  id         String   @id @default(cuid())
+  device     String?
+  browser    String?
+  os         String?
+  ip         String?
+  location   String?
+  lastActive DateTime @default(now())
+  isCurrent  Boolean  @default(false)
+  userId     String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ─────────────────────────────────────────────
 // Workspace (Top-level organization)
 // ─────────────────────────────────────────────
 
@@ -67,8 +104,13 @@ model Workspace {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  members  WorkspaceMember[]
-  projects Project[]
+  members      WorkspaceMember[]
+  projects     Project[]
+  
+  securityPolicy WorkspaceSecurityPolicy?
+  invitations    WorkspaceInvitation[]
+  subscription   WorkspaceSubscription?
+  invoices       BillingInvoice[]
 
   @@map("workspaces")
 }
@@ -107,6 +149,7 @@ model Project {
   labels    Label[]
   sprints   Sprint[]
   repository Repository?
+  deployments Deployment[]
 
   @@unique([workspaceId, key])
   @@index([workspaceId])
@@ -164,6 +207,11 @@ model Issue {
   parent       Issue?        @relation("SubtaskRelation", fields: [parentId], references: [id])
   parentId     String?
   pullRequests PullRequest[]
+  workLogs     WorkLog[]
+  commits      GitCommit[]
+
+  estimatedHours Float?
+  loggedHours    Float    @default(0)
 
   // AI analysis result stored as JSON string
   aiAnalysis String?
@@ -244,6 +292,9 @@ model Sprint {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   issues  Issue[]
 
+  // AI-generated retrospective summary stored as JSON string
+  retrospective String?
+
   @@index([projectId])
   @@map("sprints")
 }
@@ -287,6 +338,50 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([userId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// Time Tracking / Work Logs
+// ─────────────────────────────────────────────
+
+model WorkLog {
+  id               String   @id @default(cuid())
+  timeSpentMinutes Int
+  description      String?
+  issueId          String
+  userId           String
+  loggedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([issueId])
+  @@index([userId])
+  @@map("work_logs")
+}
+
+// ─────────────────────────────────────────────
+// Git Commit Attachments
+// ─────────────────────────────────────────────
+
+model GitCommit {
+  id           String   @id @default(cuid())
+  hash         String
+  shortHash    String
+  message      String
+  authorName   String
+  authorAvatar String?
+  url          String?
+  branch       String?
+  issueId      String
+  createdAt    DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+  @@index([hash])
+  @@map("git_commits")
 }
 
 // ─────────────────────────────────────────────
@@ -363,4 +458,136 @@ model PullRequest {
   @@index([repositoryId])
   @@index([issueId])
   @@map("pull_requests")
+}
+
+// ─────────────────────────────────────────────
+// Workspace Security Policy
+// ─────────────────────────────────────────────
+model WorkspaceSecurityPolicy {
+  id                      String   @id @default(cuid())
+  workspaceId             String   @unique
+  enforceTwoFactor        Boolean  @default(false)
+  restrictProjectCreation Boolean  @default(true)
+  publicIssuesRead        Boolean  @default(false)
+  sessionTimeoutHours     Int      @default(24)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_security_policies")
+}
+
+// ─────────────────────────────────────────────
+// Workspace Invitations
+// ─────────────────────────────────────────────
+model WorkspaceInvitation {
+  id          String   @id @default(cuid())
+  email       String
+  role        String   @default("DEVELOPER")
+  token       String   @unique
+  workspaceId String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([email, workspaceId])
+  @@map("workspace_invitations")
+}
+
+// ─────────────────────────────────────────────
+// Notification Settings
+// ─────────────────────────────────────────────
+model NotificationSetting {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  emailAlerts      Boolean  @default(true)
+  assignmentAlerts Boolean  @default(true)
+  mentionAlerts    Boolean  @default(true)
+  prAlerts         Boolean  @default(true)
+  slaAlerts        Boolean  @default(true)
+  weeklyDigest     Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+// ─────────────────────────────────────────────
+// Billing & Subscriptions
+// ─────────────────────────────────────────────
+model WorkspaceSubscription {
+  id                 String   @id @default(cuid())
+  workspaceId        String   @unique
+  tier               String   @default("FREE")
+  interval           String   @default("MONTHLY")
+  status             String   @default("ACTIVE")
+  currentPeriodStart DateTime @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean  @default(false)
+  paymentBrand       String?
+  paymentLast4       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_subscriptions")
+}
+
+model BillingInvoice {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  amount      Float
+  currency    String   @default("USD")
+  status      String   @default("PAID")
+  date        DateTime @default(now())
+  pdfUrl      String?
+  period      String?
+  planName    String?
+  workspaceId String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("billing_invoices")
+}
+
+// ─────────────────────────────────────────────
+// Deployments
+// ─────────────────────────────────────────────
+model Deployment {
+  id          String   @id @default(cuid())
+  environment String   // production, staging, preview
+  status      String   // success, pending, failed
+  version     String
+  commitSha   String?
+  url         String?
+  deployedAt  DateTime @default(now())
+  projectId   String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("deployments")
+}
+
+// ─────────────────────────────────────────────
+// Webhook Events (Idempotency & Replay Protection)
+// ─────────────────────────────────────────────
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  provider    String   // GITHUB, STRIPE, PAYMENT
+  eventId     String   // Provider's delivery ID or event ID (e.g. x-github-delivery, evt_xxx)
+  eventType   String   // pull_request, checkout.session.completed, etc.
+  payload     String?  // JSON stringified payload
+  status      String   @default("PROCESSED") // PROCESSED, FAILED, IGNORED
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, eventId])
+  @@map("webhook_events")
 }

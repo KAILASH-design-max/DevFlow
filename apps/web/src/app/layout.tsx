@@ -15,20 +15,26 @@ export const metadata: Metadata = {
   ],
 };
 
+import { AuthProvider } from "../context/AuthContext";
+import { Toaster } from "react-hot-toast";
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>
+        <AuthProvider>{children}</AuthProvider>
+        <Toaster position="bottom-right" />
+      </body>
     </html>
   );
 }

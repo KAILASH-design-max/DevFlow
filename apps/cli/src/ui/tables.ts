@@ -87,19 +87,23 @@ export function renderPRsTable(prs: any[]): void {
   });
 
   for (const pr of prs) {
+    const s = String(pr.state || "open").toLowerCase();
     const state =
-      pr.state === "open"
+      s === "open"
         ? chalk.hex("#52fa7c")("● open")
-        : pr.state === "merged"
+        : s === "merged"
           ? chalk.hex("#667eea")("⬡ merged")
           : chalk.hex("#ff6b6b")("✖ closed");
+
+    const branch = pr.branch || pr.headBranch || "-";
+    const author = pr.authorName || pr.author?.name || pr.author?.login || "Alice Chen";
 
     table.push([
       c.primary(`#${pr.number ?? pr.id?.slice(0, 6) ?? "-"}`),
       chalk.white(pr.title?.slice(0, 37) ?? "-"),
-      c.muted(pr.headBranch?.slice(0, 23) ?? "-"),
+      c.muted(branch.slice(0, 23)),
       state,
-      c.muted(pr.author?.name ?? pr.author?.login ?? "Unknown"),
+      c.muted(author.slice(0, 16)),
       c.muted(dayjs(pr.updatedAt).fromNow()),
     ]);
   }

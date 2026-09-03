@@ -323,8 +323,17 @@ async function main() {
 
   for (const issue of issueData) {
     const { labelNames, ...data } = issue;
-    const created = await prisma.issue.create({
-      data: {
+    const created = await prisma.issue.upsert({
+      where: {
+        projectId_number: {
+          projectId: project.id,
+          number: data.number,
+        },
+      },
+      update: {
+        ...data,
+      },
+      create: {
         ...data,
         projectId: project.id,
       },
@@ -333,8 +342,15 @@ async function main() {
     // Add labels
     for (const labelName of labelNames) {
       if (labels[labelName]) {
-        await prisma.issueLabel.create({
-          data: {
+        await prisma.issueLabel.upsert({
+          where: {
+            issueId_labelId: {
+              issueId: created.id,
+              labelId: labels[labelName],
+            },
+          },
+          update: {},
+          create: {
             issueId: created.id,
             labelId: labels[labelName],
           },
@@ -351,58 +367,64 @@ async function main() {
   });
 
   if (firstIssue) {
-    await prisma.comment.createMany({
-      data: [
-        {
-          content:
-            "The crash happens in the validation layer. I traced it to the coupon discount calculation.",
-          issueId: firstIssue.id,
-          authorId: bob.id,
-        },
-        {
-          content:
-            "I can reproduce this reliably on mobile too. The SAVE10 coupon works fine though.",
-          issueId: firstIssue.id,
-          authorId: david.id,
-        },
-        {
-          content:
-            "Looks like the percentage calculation doesn't account for the minimum order amount. Working on a fix.",
-          issueId: firstIssue.id,
-          authorId: bob.id,
-        },
-      ],
-    });
+    const existingComments = await prisma.comment.count({ where: { issueId: firstIssue.id } });
+    if (existingComments === 0) {
+      await prisma.comment.createMany({
+        data: [
+          {
+            content:
+              "The crash happens in the validation layer. I traced it to the coupon discount calculation.",
+            issueId: firstIssue.id,
+            authorId: bob.id,
+          },
+          {
+            content:
+              "I can reproduce this reliably on mobile too. The SAVE10 coupon works fine though.",
+            issueId: firstIssue.id,
+            authorId: david.id,
+          },
+          {
+            content:
+              "Looks like the percentage calculation doesn't account for the minimum order amount. Working on a fix.",
+            issueId: firstIssue.id,
+            authorId: bob.id,
+          },
+        ],
+      });
+    }
   }
 
   console.log("✅ Created 3 comments");
 
   // ─── Create Notifications ──────────────────────
-  await prisma.notification.createMany({
-    data: [
-      {
-        type: "ISSUE_ASSIGNED",
-        title: "Issue assigned to you",
-        message: 'You were assigned to "Checkout crashes when user applies SAVE20 coupon"',
-        userId: bob.id,
-        isRead: false,
-      },
-      {
-        type: "ISSUE_COMMENTED",
-        title: "New comment on your issue",
-        message: 'Bob commented on "Checkout crashes when user applies SAVE20 coupon"',
-        userId: david.id,
-        isRead: true,
-      },
-      {
-        type: "SPRINT_STARTED",
-        title: "Sprint started",
-        message: "Sprint 18 has started. Good luck team!",
-        userId: alice.id,
-        isRead: false,
-      },
-    ],
-  });
+  const existingNotifications = await prisma.notification.count();
+  if (existingNotifications === 0) {
+    await prisma.notification.createMany({
+      data: [
+        {
+          type: "ISSUE_ASSIGNED",
+          title: "Issue assigned to you",
+          message: 'You were assigned to "Checkout crashes when user applies SAVE20 coupon"',
+          userId: bob.id,
+          isRead: false,
+        },
+        {
+          type: "ISSUE_COMMENTED",
+          title: "New comment on your issue",
+          message: 'Bob commented on "Checkout crashes when user applies SAVE20 coupon"',
+          userId: david.id,
+          isRead: true,
+        },
+        {
+          type: "SPRINT_STARTED",
+          title: "Sprint started",
+          message: "Sprint 18 has started. Good luck team!",
+          userId: alice.id,
+          isRead: false,
+        },
+      ],
+    });
+  }
 
   console.log("✅ Created 3 notifications");
   console.log("\n🎉 Seed completed successfully!");

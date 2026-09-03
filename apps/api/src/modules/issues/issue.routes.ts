@@ -4,6 +4,7 @@ import { validate } from "../../middleware/validate.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { createIssueSchema, updateIssueSchema } from "@devflow/shared";
 import { IssueService } from "./issue.service.js";
+import { verifyProjectAccess, verifyIssueAccess } from "../../middleware/authorizationHelpers.js";
 
 export const issueRouter = Router();
 
@@ -19,6 +20,9 @@ issueRouter.post(
       if (!projectId) {
         throw createError("projectId query parameter is required", 400);
       }
+
+      // SECURITY: Verify user has access to this project
+      await verifyProjectAccess(req.user!.userId, projectId);
 
       const issue = await IssueService.createIssue(
         req.user!.userId,
@@ -54,6 +58,9 @@ issueRouter.get(
         throw createError("projectId query parameter is required", 400);
       }
 
+      // SECURITY: Verify user has access to this project
+      await verifyProjectAccess(req.user!.userId, projectId as string);
+
       const result = await IssueService.listIssues({
         projectId: projectId as string,
         status: status as string | undefined,
@@ -82,6 +89,9 @@ issueRouter.get(
   "/:issueId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
       const issue = await IssueService.getIssueById(req.params.issueId as string);
       res.json({ success: true, data: issue });
     } catch (error) {
@@ -95,6 +105,9 @@ issueRouter.patch(
   "/:issueId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
       const issue = await IssueService.updateIssue(
         req.user!.userId,
         req.params.issueId as string,
@@ -112,7 +125,10 @@ issueRouter.delete(
   "/:issueId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await IssueService.deleteIssue(req.params.issueId as string);
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      await IssueService.deleteIssue(req.user!.userId, req.params.issueId as string);
       res.json({ success: true, message: "Issue deleted" });
     } catch (error) {
       next(error);
@@ -125,6 +141,9 @@ issueRouter.patch(
   "/:issueId/move",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
       const { status, position } = req.body;
       const issue = await IssueService.moveIssue(
         req.user!.userId,
@@ -133,6 +152,126 @@ issueRouter.patch(
         position
       );
       res.json({ success: true, data: issue });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Timeline Activities ────────────────────────
+issueRouter.get(
+  "/:issueId/activities",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      const activities = await IssueService.getActivities(req.params.issueId as string);
+      res.json({ success: true, data: activities });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Time Tracking (Work Logs) ─────────────────
+issueRouter.post(
+  "/:issueId/worklogs",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      const { timeSpentMinutes, description } = req.body;
+      if (!timeSpentMinutes || typeof timeSpentMinutes !== "number") {
+        throw createError("timeSpentMinutes is required and must be a number", 400);
+      }
+      const workLog = await IssueService.logWork(
+        req.user!.userId,
+        req.params.issueId as string,
+        { timeSpentMinutes, description }
+      );
+      res.status(201).json({ success: true, data: workLog });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+issueRouter.get(
+  "/:issueId/worklogs",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      const workLogs = await IssueService.getWorkLogs(req.params.issueId as string);
+      res.json({ success: true, data: workLogs });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+issueRouter.delete(
+  "/:issueId/worklogs/:workLogId",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      await IssueService.deleteWorkLog(
+        req.user!.userId,
+        req.params.issueId as string,
+        req.params.workLogId as string
+      );
+      res.json({ success: true, message: "Work log deleted" });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Git Commit Attachments ────────────────────
+issueRouter.post(
+  "/:issueId/commits",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      const { hash, message, authorName, authorAvatar, url, branch } = req.body;
+      if (!hash || !message) {
+        throw createError("hash and message are required fields", 400);
+      }
+      const commit = await IssueService.attachCommit(
+        req.user!.userId,
+        req.params.issueId as string,
+        {
+          hash,
+          message,
+          authorName: authorName || req.user!.email || "Developer",
+          authorAvatar,
+          url,
+          branch,
+        }
+      );
+      res.status(201).json({ success: true, data: commit });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+issueRouter.get(
+  "/:issueId/commits",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // SECURITY: Verify user has access to this issue's project
+      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+
+      const commits = await IssueService.getCommits(req.params.issueId as string);
+      res.json({ success: true, data: commits });
     } catch (error) {
       next(error);
     }
