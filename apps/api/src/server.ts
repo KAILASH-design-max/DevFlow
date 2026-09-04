@@ -255,8 +255,9 @@ app.use(errorHandler);
 // Start Server & Lifecycle
 // ─────────────────────────────────────────────
 
-const server = app.listen(config.port, () => {
-  console.log(`
+if (!process.env.VERCEL) {
+  const server = app.listen(config.port, () => {
+    console.log(`
   ╔═══════════════════════════════════════════╗
   ║     🚀 DevFlow API Server Running        ║
   ║     Port: ${config.port}                          ║
@@ -264,23 +265,24 @@ const server = app.listen(config.port, () => {
   ║     CORS: ${config.corsOrigin.padEnd(28)}║
   ║     Rate: ${String(config.rateLimitMax + " req/" + config.rateLimitWindowMs / 1000 + "s").padEnd(28)}║
   ╚═══════════════════════════════════════════╝
-  `);
-});
-
-const gracefulShutdown = (signal: string) => {
-  console.log(`\nReceived ${signal}. Gracefully shutting down DevFlow API...`);
-  server.close(async () => {
-    try {
-      await prisma.$disconnect();
-      console.log("Prisma client disconnected successfully.");
-    } catch (err) {
-      // Suppress connection details in logs
-    }
-    process.exit(0);
+    `);
   });
-};
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  const gracefulShutdown = (signal: string) => {
+    console.log(`\nReceived ${signal}. Gracefully shutting down DevFlow API...`);
+    server.close(async () => {
+      try {
+        await prisma.$disconnect();
+        console.log("Prisma client disconnected successfully.");
+      } catch (err) {
+        // Suppress connection details in logs
+      }
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+}
 
 export default app;
