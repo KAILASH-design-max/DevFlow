@@ -196,15 +196,17 @@ const authLimiter = rateLimit({
 
 app.get("/api/health", async (_req, res) => {
   let dbStatus = "connected";
+  let isHealthy = true;
   try {
     await prisma.$queryRaw`SELECT 1`;
   } catch (e) {
     dbStatus = "disconnected";
+    isHealthy = false;
   }
 
-  res.json({
-    success: true,
-    message: "DevFlow API is running",
+  res.status(isHealthy ? 200 : 503).json({
+    success: isHealthy,
+    message: isHealthy ? "DevFlow API is running" : "DevFlow API database disconnected",
     database: dbStatus,
     timestamp: new Date().toISOString(),
     version: "1.0.0",

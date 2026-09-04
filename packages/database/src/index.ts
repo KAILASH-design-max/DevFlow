@@ -1,4 +1,17 @@
 import { PrismaClient } from "@prisma/client";
+import dotenv from "dotenv";
+import path from "path";
+
+// Ensure DATABASE_URL is populated from .env or fallback
+if (!process.env.DATABASE_URL) {
+  dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+  dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+  dotenv.config();
+}
+
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/devflow?schema=public";
+}
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 

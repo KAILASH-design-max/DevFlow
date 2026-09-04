@@ -49,6 +49,24 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
+      - name: Setup Environment Files
+        run: |
+          cat << 'EOF' > .env
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          DIRECT_URL=postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          JWT_SECRET=devflow_super_secret_test_key_for_ci_12345
+          ENCRYPTION_KEY=devflow-default-encryption-secret-key-32b
+          GITHUB_WEBHOOK_SECRET=devflow-webhook-secret
+          NODE_ENV=test
+          PORT=4000
+          WEB_PORT=3000
+          API_URL=http://localhost:4000
+          WEB_URL=http://localhost:3000
+          NEXT_PUBLIC_API_URL=http://localhost:4000
+          EOF
+          cp .env apps/api/.env
+          cp .env apps/web/.env.local
+
       - name: Type Check
         run: pnpm run typecheck
 
@@ -65,14 +83,23 @@ jobs:
           pnpm run dev &
           npx wait-on http://localhost:4000/api/health http://localhost:3000
         env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          JWT_SECRET: devflow_super_secret_test_key_for_ci_12345
+          ENCRYPTION_KEY: devflow-default-encryption-secret-key-32b
+          GITHUB_WEBHOOK_SECRET: devflow-webhook-secret
           NODE_ENV: test
           PORT: 4000
           WEB_PORT: 3000
           API_URL: http://localhost:4000
           WEB_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:4000
 
       - name: Run E2E Tests
         run: pnpm test
         env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/devflow?schema=public
+          JWT_SECRET: devflow_super_secret_test_key_for_ci_12345
           API_URL: http://localhost:4000
           WEB_URL: http://localhost:3000

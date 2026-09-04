@@ -1,5 +1,31 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "JWT_SECRET",
+    "ENCRYPTION_KEY",
+    "GITHUB_WEBHOOK_SECRET",
+    "PORT",
+    "WEB_PORT",
+    "API_URL",
+    "WEB_URL",
+    "NODE_ENV",
+    "CI"
+  ],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "JWT_SECRET",
+    "ENCRYPTION_KEY",
+    "GITHUB_WEBHOOK_SECRET",
+    "PORT",
+    "WEB_PORT",
+    "API_URL",
+    "WEB_URL",
+    "NODE_ENV",
+    "CI"
+  ],
   "tasks": {
     "dev": {
       "cache": false,
