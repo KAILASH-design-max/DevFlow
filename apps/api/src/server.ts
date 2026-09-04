@@ -72,23 +72,50 @@ app.use(
 );
 
 // ─────────────────────────────────────────────
-// CORS (Strict, supporting comma-separated multi-domain lists)
+// CORS (Strict, supporting comma-separated multi-domain lists & Vercel deployments)
 // ─────────────────────────────────────────────
 
 const parsedCorsOrigins = config.corsOrigin
   ? config.corsOrigin.split(",").map((o) => o.trim()).filter(Boolean)
   : ["http://localhost:3000"];
 
-app.use(
-  cors({
-    origin: parsedCorsOrigins.length === 1 ? parsedCorsOrigins[0] : parsedCorsOrigins,
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
-    exposedHeaders: ["X-Request-ID", "X-RateLimit-Remaining"],
-    maxAge: 600, // 10 minutes preflight cache
-  })
-);
+const corsOptions: cors.CorsOptions = {
+  origin: (requestOrigin, callback) => {
+    // 1. Allow non-browser / server-to-server / healthcheck / curl requests with no origin
+    if (!requestOrigin) return callback(null, true);
+
+    // 2. If wildcard '*' is configured, reflect the origin so Access-Control-Allow-Credentials works
+    if (parsedCorsOrigins.includes("*")) {
+      return callback(null, true);
+    }
+
+    // 3. Check exact matches from CORS_ORIGIN
+    if (parsedCorsOrigins.includes(requestOrigin)) {
+      return callback(null, true);
+    }
+
+    // 4. Automatically allow all Vercel deployments (production, branch preview, PR preview)
+    try {
+      const url = new URL(requestOrigin);
+      if (url.hostname.endsWith(".vercel.app") || url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return callback(null, true);
+      }
+    } catch {
+      // invalid origin URL string
+    }
+
+    // 5. Deny origin
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
+  exposedHeaders: ["X-Request-ID", "X-RateLimit-Remaining"],
+  maxAge: 600, // 10 minutes preflight cache
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // ─────────────────────────────────────────────
 // Body Parsing & Cookies

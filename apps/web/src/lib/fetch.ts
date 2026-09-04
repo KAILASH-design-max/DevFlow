@@ -174,6 +174,17 @@ export async function fetchWithAuth<T = any>(
     if (err.name === "AbortError") {
       throw new Error("Request timed out. Please check your network connection.");
     }
+    if (err.name === "TypeError" && err.message?.includes("fetch")) {
+      console.error(`[DevFlow API Error] Failed to reach backend at: ${url}`, err);
+      if (url.includes("localhost:4000")) {
+        throw new Error(
+          "Cannot reach API backend (attempted localhost:4000). Please set NEXT_PUBLIC_API_URL in your Vercel project environment variables and trigger a redeploy."
+        );
+      }
+      throw new Error(
+        `Unable to reach backend service at ${url}. Please verify your backend is active and CORS is permitted.`
+      );
+    }
     throw err;
   } finally {
     clearTimeout(timeoutId);
