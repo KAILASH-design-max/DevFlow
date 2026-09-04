@@ -33,7 +33,34 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <AuthProvider>{children}</AuthProvider>
-        <Toaster position="bottom-right" />
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 5000,
+            style: {
+              background: "#0f172a",
+              color: "#f8fafc",
+              border: "1px solid #334155",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
+              borderRadius: "1rem",
+              padding: "12px 20px",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+            },
+            success: {
+              iconTheme: {
+                primary: "#10b981",
+                secondary: "#0f172a",
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: "#ef4444",
+                secondary: "#0f172a",
+              },
+            },
+          }}
+        />
       </body>
     </html>
   );

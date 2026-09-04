@@ -16,13 +16,15 @@ import {
   Trash2,
   AlertCircle,
   X,
-  Link as LinkIcon,
   RefreshCw,
 } from "lucide-react";
 import { workspaceApi } from "@/lib/api";
 import { RBAC_ROLE_PERMISSIONS_MATRIX } from "@devflow/shared";
+import { usePermissions } from "@/hooks/usePermissions";
 
 export default function TeamPage() {
+  const { canInviteMembers, canManageMemberRoles, role: currentUserRole } = usePermissions();
+
   const [workspace, setWorkspace] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
@@ -38,8 +40,6 @@ export default function TeamPage() {
   const [inviting, setInviting] = useState(false);
 
   const [isRbacModalOpen, setIsRbacModalOpen] = useState(false);
-  const [generatedLink, setGeneratedLink] = useState("");
-  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     loadTeamData();
@@ -136,7 +136,7 @@ export default function TeamPage() {
       setSuccess("");
       const res = await workspaceApi.invite(workspace.id, inviteEmail, inviteRole);
       if (res.success) {
-        setSuccess(`Invitation sent to ${inviteEmail}!`);
+        setSuccess(`Invitation email dispatched via Gmail SMTP to ${inviteEmail}!`);
         setIsInviteModalOpen(false);
         setInviteEmail("");
         setInviteRole("DEVELOPER");
@@ -148,29 +148,6 @@ export default function TeamPage() {
       setError(err.message || "Failed to send invitation");
     } finally {
       setInviting(false);
-    }
-  };
-
-  const handleGenerateLink = async () => {
-    const wsId = workspace?.id || "ws_acme_eng";
-    try {
-      setError("");
-      setSuccess("");
-      const res = await workspaceApi.createInviteLink(wsId, inviteRole).catch(() => null);
-      const url =
-        res?.data?.joinUrl ||
-        res?.data?.inviteUrl ||
-        `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/join/${wsId}?token=${Math.random().toString(36).substring(2, 12)}&role=${inviteRole}`;
-
-      setGeneratedLink(url);
-      setSuccess("Shareable invite link generated!");
-
-      const invRes = await workspaceApi.getInvites(wsId).catch(() => null);
-      if (invRes?.success && invRes.data) {
-        setInvites(invRes.data);
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to create link");
     }
   };
 
@@ -218,14 +195,23 @@ export default function TeamPage() {
             <span>RBAC Matrix</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsInviteModalOpen(true)}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Invite Member</span>
-          </button>
+          {canInviteMembers ? (
+            <button
+              type="button"
+              onClick={() => setIsInviteModalOpen(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Invite Member</span>
+            </button>
+          ) : (
+            <div
+              className="px-3 py-2 bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium rounded-lg flex items-center gap-1.5 cursor-not-allowed"
+              title="Only Admins and Project Managers can invite members"
+            >
+              <span>Invite Restricted ({currentUserRole})</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -242,50 +228,6 @@ export default function TeamPage() {
           <span>{success}</span>
         </div>
       )}
-
-      {/* Quick Shareable Invite Link Card */}
-      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <LinkIcon className="w-4 h-4 text-indigo-600" /> Shareable Join Link
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Allow developers with your organization domain to join with default Developer privileges
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleGenerateLink}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer self-start sm:self-center"
-          >
-            Generate Link
-          </button>
-        </div>
-
-        {generatedLink && (
-          <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <input
-              type="text"
-              readOnly
-              value={generatedLink}
-              className="flex-1 bg-transparent text-xs font-mono text-slate-800 outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(generatedLink);
-                setCopiedLink(true);
-                setTimeout(() => setCopiedLink(false), 2000);
-              }}
-              className="px-3 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-xs font-semibold rounded-md shadow-2xs flex items-center gap-1.5 cursor-pointer"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedLink ? "Copied!" : "Copy"}</span>
-            </button>
-          </div>
-        )}
-      </div>
 
       {/* Search & Active Members Table */}
       <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4">
@@ -359,28 +301,38 @@ export default function TeamPage() {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <select
-                        value={m.role}
-                        onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                        className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
-                      >
-                        <option value="ADMIN">Admin (Full Access)</option>
-                        <option value="PROJECT_MANAGER">Project Manager</option>
-                        <option value="DEVELOPER">Developer (Code &amp; Issues)</option>
-                        <option value="TESTER">QA / Tester</option>
-                        <option value="VIEWER">Viewer (Read-Only)</option>
-                      </select>
+                      {canManageMemberRoles ? (
+                        <select
+                          value={m.role}
+                          onChange={(e) => handleRoleChange(m.id, e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                        >
+                          <option value="ADMIN">Admin (Full Access)</option>
+                          <option value="PROJECT_MANAGER">Project Manager</option>
+                          <option value="DEVELOPER">Developer (Code &amp; Issues)</option>
+                          <option value="TESTER">QA / Tester</option>
+                          <option value="VIEWER">Viewer (Read-Only)</option>
+                        </select>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                          {m.role}
+                        </span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMember(m.id, m.user?.name || m.user?.email)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                        title="Remove Member"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canManageMemberRoles ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMember(m.id, m.user?.name || m.user?.email)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Remove Member (Admin only)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Protected</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -415,13 +367,15 @@ export default function TeamPage() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleRevokeInvite(inv.id)}
-                  className="px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
-                >
-                  Revoke
-                </button>
+                {canManageMemberRoles && (
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeInvite(inv.id)}
+                    className="px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                  >
+                    Revoke
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -474,6 +428,11 @@ export default function TeamPage() {
                 </select>
               </div>
 
+              <div className="flex items-center gap-2.5 p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-lg text-xs text-indigo-800">
+                <Mail className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>An invitation email with workspace access instructions will be dispatched via Gmail SMTP.</span>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -485,9 +444,9 @@ export default function TeamPage() {
                 <button
                   type="submit"
                   disabled={inviting}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {inviting ? "Sending..." : "Send Invite"}
+                  {inviting ? "Sending Invitation..." : "Send Invitation Email"}
                 </button>
               </div>
             </form>

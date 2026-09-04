@@ -38,12 +38,16 @@ import {
   Users,
   Github,
   Kanban,
+  Eye,
+  Shield,
+  Crown,
 } from "lucide-react";
 import { useUiStore } from "@/lib/store";
 import CreateIssueModal from "@/components/CreateIssueModal";
 import { ReleaseNotesModal } from "@/components/ReleaseNotesModal";
 import { notificationApi, issueApi, projectApi, workspaceApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useRealtime } from "@/lib/useRealtime";
 
 
@@ -102,7 +106,8 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOutUser } = useAuth();
+  const { user: authUser, loading: authLoading, signOutUser } = useAuth();
+  const { canCreateIssue, badgeConfig, role: userRole } = usePermissions();
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<any>({ name: "", email: "", role: "" });
   const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
@@ -120,6 +125,7 @@ export default function DashboardLayout({
   const [projectsCount, setProjectsCount] = useState<number>(0);
   const [issuesCount, setIssuesCount] = useState<number>(0);
   const [teamCount, setTeamCount] = useState<number>(0);
+  const [workspaceName, setWorkspaceName] = useState<string>("DevFlow Workspace");
   const { openCreateIssue } = useUiStore();
 
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -129,17 +135,22 @@ export default function DashboardLayout({
 
   const fetchSidebarStats = async () => {
     try {
-      const storedToken = localStorage.getItem("accessToken");
-      if (!storedToken) return;
-
       // Reset count before fetch to prevent stale data
       setIssuesCount(0);
-      let currentWsId = "";
+      let currentWsId = typeof window !== "undefined" ? localStorage.getItem("currentWorkspaceId") || "" : "";
       let currentMembers: any[] = [];
       const wsRes = await workspaceApi.list().catch(() => null);
       if (wsRes?.success && wsRes.data?.length > 0) {
-        const ws = wsRes.data[0];
+        let ws = wsRes.data.find((w: any) => w.id === currentWsId);
+        if (!ws) {
+          const withProjects = wsRes.data.find((w: any) => (w._count?.projects || 0) > 0);
+          ws = withProjects || wsRes.data[0];
+        }
         currentWsId = ws.id;
+        setWorkspaceName(ws.name || "DevFlow Workspace");
+        if (typeof window !== "undefined") {
+          localStorage.setItem("currentWorkspaceId", currentWsId);
+        }
         if (ws.members && ws.members.length > 0) {
           currentMembers = ws.members;
         } else {
@@ -187,33 +198,41 @@ export default function DashboardLayout({
     debouncedFetch();
 
     window.addEventListener("devflow:issue_created", debouncedFetch);
+    window.addEventListener("devflow:workspace_changed", debouncedFetch);
     return () => {
       window.removeEventListener("devflow:issue_created", debouncedFetch);
+      window.removeEventListener("devflow:workspace_changed", debouncedFetch);
       if (statsTimeoutRef.current) clearTimeout(statsTimeoutRef.current);
     };
 
   }, []);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("accessToken");
-    const storedUser = localStorage.getItem("user");
+    if (authLoading) return;
+
+    let activeUser = authUser;
+    if (!activeUser && typeof window !== "undefined") {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        try {
+          activeUser = JSON.parse(storedUser);
+        } catch {
+          activeUser = null;
+        }
+      }
+    }
     
-    if (!storedToken || !storedUser) {
-      // Clear potentially corrupt state and redirect to login
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user");
+    if (!activeUser) {
       router.push("/");
       return;
     }
 
-    try {
-      setUser(JSON.parse(storedUser));
-    } catch (e) {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user");
-      router.push("/");
+    if (activeUser.emailVerified === false) {
+      router.push(`/verify-email?email=${encodeURIComponent(activeUser.email || "")}`);
       return;
     }
+
+    setUser(activeUser);
 
     const savedSidebar = localStorage.getItem("isSidebarCollapsed");
     if (savedSidebar === "true") {
@@ -225,7 +244,7 @@ export default function DashboardLayout({
         setUnreadCount(res.data.unreadCount || 0);
       }
     }).catch(() => {});
-  }, []);
+  }, [authUser, authLoading, router]);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -308,7 +327,9 @@ export default function DashboardLayout({
       // "C" -> Create Issue
       if (e.key.toLowerCase() === "c" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        openCreateIssue();
+        if (canCreateIssue) {
+          openCreateIssue();
+        }
         return;
       }
 
@@ -456,8 +477,8 @@ export default function DashboardLayout({
                 <h1 className="font-sans text-base font-bold text-slate-900 tracking-tight leading-none">
                   DevFlow
                 </h1>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-semibold mt-1 truncate">
-                  Engineering Team
+                <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-semibold mt-1 truncate" title={workspaceName}>
+                  {workspaceName}
                 </p>
               </div>
             )}
@@ -466,22 +487,41 @@ export default function DashboardLayout({
 
         {/* Action Button: New Issue */}
         <div className={`my-4 ${isSidebarCollapsed ? "px-3" : "px-4"}`}>
-          {isSidebarCollapsed ? (
-            <button
-              onClick={() => openCreateIssue()}
-              className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center transition-colors shadow-sm cursor-pointer"
-              title="New Issue (Press C)"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+          {!mounted || canCreateIssue ? (
+            isSidebarCollapsed ? (
+              <button
+                onClick={() => openCreateIssue()}
+                className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center transition-colors shadow-sm cursor-pointer"
+                title="New Issue (Press C)"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => openCreateIssue()}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2.5 px-4 font-sans text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all duration-150 shadow-sm hover:shadow cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Issue</span>
+              </button>
+            )
           ) : (
-            <button
-              onClick={() => openCreateIssue()}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2.5 px-4 font-sans text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all duration-150 shadow-sm hover:shadow cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>New Issue</span>
-            </button>
+            isSidebarCollapsed ? (
+              <div
+                className="w-full h-10 bg-slate-100 border border-slate-200 text-slate-400 rounded-lg flex items-center justify-center cursor-not-allowed opacity-60"
+                title="Issue creation restricted for Viewer role"
+              >
+                <Eye className="w-4 h-4" />
+              </div>
+            ) : (
+              <div
+                className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-lg py-2 px-3 font-sans text-xs font-medium flex items-center justify-center gap-2 cursor-not-allowed opacity-75"
+                title="Viewers have read-only access"
+              >
+                <Eye className="w-3.5 h-3.5 text-slate-400" />
+                <span>Read-Only Mode</span>
+              </div>
+            )
           )}
         </div>
 
@@ -764,6 +804,17 @@ export default function DashboardLayout({
               <span>Upgrade</span>
             </Link>
 
+            {/* Role Badge Indicator in Header */}
+            {mounted && (
+              <div
+                className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeConfig.badgeClass}`}
+                title={`Active RBAC Role: ${badgeConfig.label}`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dotClass}`} />
+                <span>{badgeConfig.label}</span>
+              </div>
+            )}
+
             {/* User Profile & Role Switcher */}
             <div className="relative ml-1" ref={userMenuRef}>
               <button
@@ -781,9 +832,12 @@ export default function DashboardLayout({
                   <div className="px-4 py-3 border-b border-slate-100">
                     <p className="text-sm font-semibold text-slate-900">{user.name}</p>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">{user.email}</p>
-                    <span className="inline-block mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      {user.role || "Lead Engineer"}
-                    </span>
+                    <div className="mt-2">
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${badgeConfig.badgeClass}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dotClass}`} />
+                        {badgeConfig.label}
+                      </span>
+                    </div>
                   </div>
 
 
@@ -983,23 +1037,25 @@ export default function DashboardLayout({
             {/* Results */}
             <div className="max-h-80 overflow-y-auto p-2 space-y-3">
               {/* Quick Create Action */}
-              <div className="px-2 py-1">
-                <button
-                  onClick={() => {
-                    setIsCommandOpen(false);
-                    openCreateIssue();
-                  }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 hover:bg-indigo-100 transition-colors text-xs font-semibold cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-indigo-600" />
-                    <span>Create New AI-Assisted Issue</span>
-                  </div>
-                  <span className="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-700">
-                    C
-                  </span>
-                </button>
-              </div>
+              {canCreateIssue && (
+                <div className="px-2 py-1">
+                  <button
+                    onClick={() => {
+                      setIsCommandOpen(false);
+                      openCreateIssue();
+                    }}
+                    className="w-full flex items-center justify-between p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 hover:bg-indigo-100 transition-colors text-xs font-semibold cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-indigo-600" />
+                      <span>Create New AI-Assisted Issue</span>
+                    </div>
+                    <span className="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-700">
+                      C
+                    </span>
+                  </button>
+                </div>
+              )}
 
               {/* Issues Found */}
               {mockIssues.length > 0 && (

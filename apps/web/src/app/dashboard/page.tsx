@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useUiStore } from "@/lib/store";
+import { getInMemoryAccessToken } from "@/lib/fetch";
 import {
   Bug,
   Zap,
@@ -41,6 +42,7 @@ import {
 } from "recharts";
 import { workspaceApi, projectApi, issueApi, sprintApi } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
+import { usePermissions } from "@/hooks/usePermissions";
 import toast from "react-hot-toast";
 
 interface Subtask {
@@ -71,17 +73,19 @@ interface AiInsight {
 
 export default function DashboardOverviewPage() {
   const { openCreateIssue } = useUiStore();
+  const { canCreateIssue, role: userRole } = usePermissions();
+  const [mounted, setMounted] = useState(false);
   const [chartTab, setChartTab] = useState<"burndown" | "velocity">("burndown");
   const [showAiModal, setShowAiModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [currentProject, setCurrentProject] = useState<{ id: string; name: string; key: string }>({
-    id: "proj_speedyshop",
-    name: "SpeedyShop",
-    key: "SS",
-  });
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const [currentProject, setCurrentProject] = useState<{ id: string; name: string; key: string } | null>(null);
   const [sprints, setSprints] = useState<any[]>([]);
-  const [selectedSprint, setSelectedSprint] = useState("Sprint 18");
+  const [selectedSprint, setSelectedSprint] = useState("Sprint 1");
   const [assignments, setAssignments] = useState<AssignmentIssue[]>([]);
   const [aiInsights, setAiInsights] = useState<AiInsight[]>([]);
   const [expandedIssueId, setExpandedIssueId] = useState<string | null>(null);
@@ -133,14 +137,21 @@ export default function DashboardOverviewPage() {
 
   const loadDashboardData = async () => {
     try {
-      const storedToken = localStorage.getItem("accessToken");
-      if (!storedToken) return;
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser && !getInMemoryAccessToken()) return;
 
       setLoading(true);
-      let currentWsId = "";
+      let currentWsId = typeof window !== "undefined" ? localStorage.getItem("currentWorkspaceId") || "" : "";
       const wsRes = await workspaceApi.list().catch(() => null);
       if (wsRes?.success && wsRes.data?.length > 0) {
-        currentWsId = wsRes.data[0].id;
+        let ws = wsRes.data.find((w: any) => w.id === currentWsId);
+        if (!ws) {
+          ws = wsRes.data.find((w: any) => (w._count?.projects || 0) > 0) || wsRes.data[0];
+        }
+        currentWsId = ws.id;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("currentWorkspaceId", currentWsId);
+        }
       }
 
       // 1. Fetch real projects from DB
@@ -153,20 +164,22 @@ export default function DashboardOverviewPage() {
       }
       const allProjects = Array.from(pMap.values());
 
-      let selectedProj = allProjects.find((p) => p.id === "hg2D1fflVt3JgxNGwU50" || p.key === "WEB") || allProjects[0] || { id: "hg2D1fflVt3JgxNGwU50", name: "web applications", key: "WEB" };
+      let selectedProj = allProjects[0] || null;
       setCurrentProject(selectedProj);
 
       // 2. Fetch real sprints
       let loadedSprints: any[] = [];
-      try {
-        const spRes = await sprintApi.list(selectedProj.id).catch(() => null);
-        loadedSprints = spRes?.success && spRes.data ? spRes.data : [];
-        setSprints(loadedSprints);
-        if (loadedSprints.length > 0) {
-          setSelectedSprint(loadedSprints[0].name || "Sprint 1");
+      if (selectedProj?.id) {
+        try {
+          const spRes = await sprintApi.list(selectedProj.id).catch(() => null);
+          loadedSprints = spRes?.success && spRes.data ? spRes.data : [];
+          setSprints(loadedSprints);
+          if (loadedSprints.length > 0) {
+            setSelectedSprint(loadedSprints[0].name || "Sprint 1");
+          }
+        } catch (e) {
+          console.warn("Sprints load notice:", e);
         }
-      } catch (e) {
-        console.warn("Sprints load notice:", e);
       }
 
       // 3. Fetch all real issues from API
@@ -180,7 +193,7 @@ export default function DashboardOverviewPage() {
       }
 
       const mergedIssues = apiIssues;
-      processIssuesData(mergedIssues, selectedProj.key, loadedSprints, allProjects);
+      processIssuesData(mergedIssues, selectedProj?.key || "", loadedSprints, allProjects);
     } catch (err) {
       console.error("Dashboard data load error:", err);
     } finally {
@@ -391,7 +404,11 @@ export default function DashboardOverviewPage() {
             Dashboard Overview
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-            <span className="font-semibold text-slate-800">{currentProject.name} ({currentProject.key})</span>
+            {currentProject ? (
+              <span className="font-semibold text-slate-800">{currentProject.name} ({currentProject.key})</span>
+            ) : (
+              <span className="font-semibold text-slate-800">Workspace Overview</span>
+            )}
             <span>&bull;</span>
             <span className="font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
               {selectedSprint}
@@ -419,13 +436,22 @@ export default function DashboardOverviewPage() {
             </select>
           </div>
 
-          <button
-            onClick={() => openCreateIssue()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>New Issue</span>
-          </button>
+          {!mounted || canCreateIssue ? (
+            <button
+              onClick={() => openCreateIssue()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>New Issue</span>
+            </button>
+          ) : (
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg text-xs font-medium cursor-not-allowed"
+              title="Issue creation restricted for Viewer role"
+            >
+              <span>Read-Only ({userRole})</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -927,7 +953,7 @@ export default function DashboardOverviewPage() {
                     DevFlow AI Insights
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Automated code analysis &amp; sprint recommendations for {currentProject.name}
+                    Automated code analysis &amp; sprint recommendations for {currentProject?.name || "your projects"}
                   </p>
                 </div>
               </div>

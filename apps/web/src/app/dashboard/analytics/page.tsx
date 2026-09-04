@@ -41,8 +41,8 @@ export default function AnalyticsPage() {
   const [timeframe, setTimeframe] = useState<"7d" | "4w" | "90d">("4w");
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("hg2D1fflVt3JgxNGwU50");
-  const [selectedProjectName, setSelectedProjectName] = useState<string>("web applications");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedProjectName, setSelectedProjectName] = useState<string>("");
 
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [velocityData, setVelocityData] = useState<any[]>([]);
@@ -68,15 +68,13 @@ export default function AnalyticsPage() {
       const allProjects = dbProjects.map((p: any) => ({ id: p.id, name: p.name, key: p.key || "DEV" }));
       setProjects(allProjects);
 
-      const preferred = allProjects.find((p: any) => p.id === "hg2D1fflVt3JgxNGwU50" || p.key === "WEB") || allProjects[0] || {
-        id: "hg2D1fflVt3JgxNGwU50",
-        name: "web applications",
-        key: "WEB",
-      };
+      const preferred = allProjects[0] || null;
 
-      setSelectedProjectId(preferred.id);
-      setSelectedProjectName(preferred.name);
-      await loadAnalytics(preferred.id);
+      if (preferred) {
+        setSelectedProjectId(preferred.id);
+        setSelectedProjectName(preferred.name);
+        await loadAnalytics(preferred.id);
+      }
     } catch (err) {
       console.error("Failed to load analytics:", err);
     } finally {
@@ -91,23 +89,31 @@ export default function AnalyticsPage() {
         setAnalyticsData(res.data);
 
         // Velocity
-        if (res.data.velocityData) {
+        if (Array.isArray(res.data.velocityData)) {
           setVelocityData(res.data.velocityData);
+        } else {
+          setVelocityData([]);
         }
 
         // Lead time phases
-        if (res.data.leadTimeData?.phases) {
+        if (Array.isArray(res.data.leadTimeData?.phases)) {
           setLeadTimePhases(res.data.leadTimeData.phases);
+        } else {
+          setLeadTimePhases([]);
         }
 
         // MTTR
-        if (res.data.mttrData?.severities) {
+        if (Array.isArray(res.data.mttrData?.severities)) {
           setMttrSeverities(res.data.mttrData.severities);
+        } else {
+          setMttrSeverities([]);
         }
 
         // Team throughput
-        if (res.data.teamThroughput) {
+        if (Array.isArray(res.data.teamThroughput)) {
           setTeamVelocity(res.data.teamThroughput);
+        } else {
+          setTeamVelocity([]);
         }
       }
     } catch (err) {
@@ -122,35 +128,16 @@ export default function AnalyticsPage() {
     await loadAnalytics(projectId);
   };
 
-  // Fallback safe defaults if loading
-  const totalCompleted = analyticsData?.completedIssues ?? (velocityData.reduce((acc, curr) => acc + (curr.completed || 0), 0) || 0);
-  const totalCommitted = analyticsData?.totalIssues ?? (velocityData.reduce((acc, curr) => acc + (curr.committed || 0), 0) || 0);
-  const avgLeadTime = analyticsData?.leadTimeData?.averageLeadTimeDays || 2.5;
-  const avgCycleTime = analyticsData?.leadTimeData?.totalCycleTimeDays || 1.8;
-  const overallMttr = analyticsData?.mttrData?.overallMttrHours || 14.2;
-  const totalAi = velocityData.reduce((acc, curr) => acc + (curr.aiAssisted || 3), 0) || 7;
+  const totalCompleted = analyticsData?.completedIssues ?? 0;
+  const totalCommitted = analyticsData?.totalIssues ?? 0;
+  const avgLeadTime = analyticsData?.leadTimeData?.averageLeadTimeDays ?? 0;
+  const avgCycleTime = analyticsData?.leadTimeData?.totalCycleTimeDays ?? 0;
+  const overallMttr = analyticsData?.mttrData?.overallMttrHours ?? 0;
+  const totalAi = analyticsData?.aiAssistedCount ?? 0;
 
-  const displayPhases = leadTimePhases.length > 0 ? leadTimePhases : [
-    { phase: "Triage & Backlog", durationHours: 14.5, percentage: 22, color: "#64748b" },
-    { phase: "Active Development", durationHours: 28.0, percentage: 38, color: "#4f46e5" },
-    { phase: "PR Review & CI", durationHours: 7.5, percentage: 10, color: "#06b6d4" },
-    { phase: "Testing & Verification", durationHours: 12.0, percentage: 17, color: "#8b5cf6" },
-    { phase: "Deployment & Done", durationHours: 9.0, percentage: 13, color: "#10b981" },
-  ];
-
-  const displayMttr = mttrSeverities.length > 0 ? mttrSeverities : [
-    { priority: "CRITICAL", mttrHours: 3.2, targetSlaHours: 6.0, complianceRate: 100, color: "#ef4444" },
-    { priority: "HIGH", mttrHours: 14.5, targetSlaHours: 24.0, complianceRate: 97, color: "#f97316" },
-    { priority: "MEDIUM", mttrHours: 32.0, targetSlaHours: 72.0, complianceRate: 98, color: "#3b82f6" },
-    { priority: "LOW", mttrHours: 72.0, targetSlaHours: 168.0, complianceRate: 96, color: "#64748b" },
-  ];
-
-  const displayTeam = teamVelocity.length > 0 ? teamVelocity : [
-    { name: "Alice Chen", role: "Lead Engineer", completed: 4, inProgress: 1, avgCycleTimeDays: 1.8 },
-    { name: "Bob Martinez", role: "Fullstack Developer", completed: 2, inProgress: 1, avgCycleTimeDays: 2.1 },
-    { name: "Carol Zhang", role: "Project Manager", completed: 2, inProgress: 0, avgCycleTimeDays: 1.6 },
-    { name: "David Kim", role: "QA & DevOps", completed: 1, inProgress: 1, avgCycleTimeDays: 2.4 },
-  ];
+  const displayPhases = leadTimePhases;
+  const displayMttr = mttrSeverities;
+  const displayTeam = teamVelocity;
 
   return (
     <div className="space-y-6 animate-fade-in max-w-7xl mx-auto text-slate-900 pb-12">
@@ -283,38 +270,46 @@ export default function AnalyticsPage() {
             </p>
           </div>
           <div className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
-            Total Cycle: 84h (~3.5 Days)
+            Total Cycle: {(avgCycleTime * 24).toFixed(0)}h (~{avgCycleTime} Days)
           </div>
         </div>
 
         {/* Stage Progress Bar */}
-        <div className="space-y-3">
-          <div className="h-4 w-full bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
-            {displayPhases.map((p, i) => (
-              <div
-                key={i}
-                style={{ width: `${p.percentage}%`, background: p.color }}
-                className="h-full transition-all hover:opacity-80 cursor-pointer"
-                title={`${p.phase}: ${p.durationHours || p.duration}h (${p.percentage}%)`}
-              />
-            ))}
+        {displayPhases.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+            <p className="text-xs text-slate-500 font-medium">
+              No completed issue cycle telemetry recorded for this project yet. Advance issues to DONE to generate live phase breakdowns.
+            </p>
           </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="h-4 w-full bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
+              {displayPhases.map((p, i) => (
+                <div
+                  key={i}
+                  style={{ width: `${p.percentage}%`, background: p.color }}
+                  className="h-full transition-all hover:opacity-80 cursor-pointer"
+                  title={`${p.phase}: ${p.durationHours || p.duration}h (${p.percentage}%)`}
+                />
+              ))}
+            </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
-            {displayPhases.map((p, i) => (
-              <div key={i} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }} />
-                  <span className="text-xs font-bold text-slate-800 truncate">{p.phase}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
+              {displayPhases.map((p, i) => (
+                <div key={i} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }} />
+                    <span className="text-xs font-bold text-slate-800 truncate">{p.phase}</span>
+                  </div>
+                  <div className="text-sm font-extrabold text-slate-900">
+                    {p.durationHours || p.duration}h
+                  </div>
+                  <p className="text-[10px] text-slate-500">{p.percentage}% of cycle time</p>
                 </div>
-                <div className="text-sm font-extrabold text-slate-900">
-                  {p.durationHours || p.duration}h
-                </div>
-                <p className="text-[10px] text-slate-500">{p.percentage}% of cycle time</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ─── Sprint Velocity & MTTR Adherence ─── */}
@@ -330,35 +325,35 @@ export default function AnalyticsPage() {
               <p className="text-xs text-slate-500 mt-0.5">Committed vs. Completed Story Points</p>
             </div>
             <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-              {((totalCompleted / totalCommitted) * 100).toFixed(0)}% Avg Delivery
+              {totalCommitted > 0 ? ((totalCompleted / totalCommitted) * 100).toFixed(0) : "0"}% Avg Delivery
             </div>
           </div>
 
           <div className="h-64 w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={velocityData.length > 0 ? velocityData : [
-                { sprint: "Sprint 14", committed: 36, completed: 34 },
-                { sprint: "Sprint 15", committed: 40, completed: 37 },
-                { sprint: "Sprint 16", committed: 42, completed: 40 },
-                { sprint: "Sprint 17", committed: 45, completed: 42 },
-                { sprint: "Sprint 18", committed: 48, completed: 46 },
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="sprint" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "#ffffff",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "8px",
-                    color: "#0f172a",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="completed" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Completed Points" />
-                <Bar dataKey="committed" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="Committed Points" />
-              </BarChart>
-            </ResponsiveContainer>
+            {velocityData.length === 0 ? (
+              <div className="h-full flex items-center justify-center bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+                <p className="text-xs text-slate-500 font-medium">No sprint velocity metrics recorded yet.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={velocityData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="sprint" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      color: "#0f172a",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Bar dataKey="completed" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Completed Points" />
+                  <Bar dataKey="committed" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="Committed Points" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -375,29 +370,35 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="space-y-3 pt-2">
-            {displayMttr.map((m, i) => (
-              <div key={i} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span
-                    className="px-2 py-0.5 rounded text-[10px] font-bold font-mono"
-                    style={{ background: `${m.color}15`, color: m.color }}
-                  >
-                    {m.priority}
-                  </span>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">
-                      MTTR: {m.mttrHours || m.mttr}h{" "}
-                      <span className="text-slate-400 font-normal">
-                        (Target: &lt;{m.targetSlaHours || m.targetSla}h)
-                      </span>
-                    </p>
+            {displayMttr.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+                <p className="text-xs text-slate-500 font-medium">No bug resolution telemetry recorded yet.</p>
+              </div>
+            ) : (
+              displayMttr.map((m, i) => (
+                <div key={i} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="px-2 py-0.5 rounded text-[10px] font-bold font-mono"
+                      style={{ background: `${m.color}15`, color: m.color }}
+                    >
+                      {m.priority}
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">
+                        MTTR: {m.mttrHours || m.mttr || 0}h{" "}
+                        <span className="text-slate-400 font-normal">
+                          (Target: &lt;{m.targetSlaHours || m.targetSla}h)
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                    {m.complianceRate || m.compliance || 100}% SLA Adherence
                   </div>
                 </div>
-                <div className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
-                  {m.complianceRate || m.compliance}% SLA Adherence
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -414,31 +415,37 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {displayTeam.map((member, i) => (
-            <div key={i} className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold font-mono">
-                  {member.name.split(" ").map((n: string) => n[0]).join("")}
+        {displayTeam.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+            <p className="text-xs text-slate-500 font-medium">No team member velocity recorded for this project yet.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {displayTeam.map((member, i) => (
+              <div key={i} className="p-4 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold font-mono">
+                    {member.name.split(" ").map((n: string) => n[0]).join("")}
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                    {member.role}
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                  {member.role}
-                </span>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">{member.name}</h4>
+                  <p className="text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-800">{member.completed}</span> completed &bull;{" "}
+                    <span className="font-semibold text-slate-800">{member.inProgress || 0}</span> in progress
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 flex justify-between">
+                  <span>Avg Cycle Time:</span>
+                  <span className="font-bold text-indigo-600">{member.avgCycleTimeDays || 0} days</span>
+                </div>
               </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">{member.name}</h4>
-                <p className="text-[11px] text-slate-500">
-                  <span className="font-semibold text-slate-800">{member.completed}</span> completed &bull;{" "}
-                  <span className="font-semibold text-slate-800">{member.inProgress || 1}</span> in progress
-                </p>
-              </div>
-              <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-600 flex justify-between">
-                <span>Avg Cycle Time:</span>
-                <span className="font-bold text-indigo-600">{member.avgCycleTimeDays || member.avgCycleTime || "2.1"} days</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

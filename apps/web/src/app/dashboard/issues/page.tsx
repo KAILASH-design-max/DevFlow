@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { getInMemoryAccessToken } from "@/lib/fetch";
 import {
   ListTodo,
   Plus,
@@ -21,9 +22,11 @@ import {
 import { useUiStore } from "@/lib/store";
 import { issueApi, projectApi, workspaceApi } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
+import { usePermissions } from "@/hooks/usePermissions";
 
 export default function IssuesListPage() {
   const { openCreateIssue } = useUiStore();
+  const { canCreateIssue, role: userRole } = usePermissions();
   const [issues, setIssues] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
@@ -53,14 +56,21 @@ export default function IssuesListPage() {
 
   const loadLiveIssues = async () => {
     try {
-      const storedToken = localStorage.getItem("accessToken");
-      if (!storedToken) return;
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser && !getInMemoryAccessToken()) return;
 
       setLoading(true);
-      let currentWsId = "";
+      let currentWsId = typeof window !== "undefined" ? localStorage.getItem("currentWorkspaceId") || "" : "";
       const wsRes = await workspaceApi.list().catch(() => null);
       if (wsRes?.success && wsRes.data?.length > 0) {
-        currentWsId = wsRes.data[0].id;
+        let ws = wsRes.data.find((w: any) => w.id === currentWsId);
+        if (!ws) {
+          ws = wsRes.data.find((w: any) => (w._count?.projects || 0) > 0) || wsRes.data[0];
+        }
+        currentWsId = ws.id;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("currentWorkspaceId", currentWsId);
+        }
       }
 
       // Fetch projects from Database
@@ -182,13 +192,22 @@ export default function IssuesListPage() {
             <ListTodo className="w-3.5 h-3.5 text-indigo-600" />
             <span>Switch to Kanban</span>
           </Link>
-          <button
-            onClick={() => openCreateIssue()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Issue</span>
-          </button>
+          {canCreateIssue ? (
+            <button
+              onClick={() => openCreateIssue()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Issue</span>
+            </button>
+          ) : (
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded-lg text-xs font-medium cursor-not-allowed"
+              title="Issue creation restricted for Viewer role"
+            >
+              <span>Read-Only ({userRole})</span>
+            </div>
+          )}
         </div>
       </div>
 

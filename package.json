@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "postinstall": "pnpm db:generate",
     "dev": "turbo dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
@@ -13,6 +14,8 @@
     "db:generate": "pnpm --filter @devflow/database db:generate",
     "db:push": "pnpm --filter @devflow/database db:push",
     "db:migrate": "pnpm --filter @devflow/database db:migrate",
+    "db:migrate:deploy": "pnpm --filter @devflow/database db:migrate:deploy",
+    "db:reset": "pnpm --filter @devflow/database db:reset",
     "db:seed": "pnpm --filter @devflow/database db:seed",
     "db:seed:firestore": "pnpm --filter @devflow/api exec tsx src/scripts/seedFirestore.ts",
     "db:seed:all": "pnpm db:seed && pnpm db:seed:firestore",
@@ -23,7 +26,27 @@
     "cli:run": "node apps/cli/dist/index.js"
   },
   "devDependencies": {
+    "@neon/config": "^1.1.0",
+    "@neon/env": "^1.1.6",
     "turbo": "^2.3.0"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/s3-request-presigner": "^3.1123.0",
+    "dotenv": "^16.4.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "qs": ">=6.16.0",
+      "tmp": ">=0.2.4",
+      "postcss": ">=8.5.23",
+      "sharp": ">=0.35.4",
+      "deepmerge-ts": ">=8.0.2",
+      "uuid": ">=11.1.1"
+    }
+  },
+  "prisma": {
+    "schema": "packages/database/prisma/schema.prisma"
+  }
 }

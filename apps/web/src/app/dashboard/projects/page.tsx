@@ -21,9 +21,14 @@ import {
 import Link from "next/link";
 import { workspaceApi, projectApi } from "@/lib/api";
 import { useRealtime } from "@/lib/useRealtime";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/context/AuthContext";
 
 export default function ProjectsPage() {
+  const { user: authUser, loading: authLoading } = useAuth();
+  const { canCreateProject, role: userRole } = usePermissions();
   const [projects, setProjects] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -34,9 +39,9 @@ export default function ProjectsPage() {
   const [workspaceId, setWorkspaceId] = useState("");
 
   useEffect(() => {
-    loadProjects();
-
-    loadProjects();
+    if (!authLoading) {
+      loadProjects();
+    }
 
     const handleCreated = () => {
       loadProjects();
@@ -46,7 +51,7 @@ export default function ProjectsPage() {
     return () => {
       window.removeEventListener("devflow:issue_created", handleCreated);
     };
-  }, []);
+  }, [authLoading, authUser?.id]);
 
   const { lastEvent } = useRealtime();
 
@@ -56,38 +61,75 @@ export default function ProjectsPage() {
     }
   }, [lastEvent]);
 
-  const loadProjects = async () => {
+  const handleWorkspaceChange = (newWsId: string) => {
+    setWorkspaceId(newWsId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("currentWorkspaceId", newWsId);
+      window.dispatchEvent(new Event("devflow:workspace_changed"));
+    }
+    loadProjects(newWsId);
+  };
+
+  const loadProjects = async (targetWsId?: string) => {
     try {
       setLoading(true);
-      let currentWsId = "ws_acme_eng";
-
-      try {
-        const wsRes = await workspaceApi.list().catch(() => null);
-        if (wsRes?.success && wsRes.data?.length > 0) {
-          currentWsId = wsRes.data[0].id;
-          setWorkspaceId(currentWsId);
-        }
-      } catch {}
-
-      const dbProjects = currentWsId ? (await projectApi.list(currentWsId).catch(() => null))?.data || [] : [];
-
-      let allProjects = dbProjects;
-
-      if (allProjects.length === 0) {
-        allProjects = [
-          {
-            id: "proj_speedyshop",
-            name: "SpeedyShop",
-            key: "SS",
-            description: "High-performance e-commerce platform with automated delivery logistics",
-            workspaceId: currentWsId,
-            _count: { issues: 0, members: 1 },
-            createdAt: new Date().toISOString(),
-          },
-        ];
+      let currentWsId = targetWsId || workspaceId;
+      if (!currentWsId && typeof window !== "undefined") {
+        currentWsId = localStorage.getItem("currentWorkspaceId") || "";
       }
 
-      setProjects(allProjects);
+      let wsList: any[] = [];
+      try {
+        const wsRes = await workspaceApi.list().catch(() => null);
+        if (wsRes?.success && Array.isArray(wsRes.data) && wsRes.data.length > 0) {
+          wsList = wsRes.data;
+          setWorkspaces(wsList);
+
+          // Find if selected workspace is valid and contains projects
+          let matched = wsList.find((w: any) => w.id === currentWsId);
+          // If current selection has 0 projects, prefer a workspace that has projects
+          if (!matched || (matched._count?.projects === 0 && wsList.some((w: any) => (w._count?.projects || 0) > 0))) {
+            const wsWithProjects = wsList.find((w: any) => (w._count?.projects || 0) > 0);
+            if (wsWithProjects) {
+              matched = wsWithProjects;
+              currentWsId = wsWithProjects.id;
+            } else if (!matched) {
+              currentWsId = wsList[0].id;
+            }
+          }
+          setWorkspaceId(currentWsId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("currentWorkspaceId", currentWsId);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load workspaces:", e);
+      }
+
+      let dbProjects: any[] = [];
+      if (currentWsId) {
+        const projRes = await projectApi.list(currentWsId).catch(() => null);
+        if (projRes?.success && Array.isArray(projRes.data)) {
+          dbProjects = projRes.data;
+        }
+      }
+
+      // Universal fallback: if no projects found in target workspace, query all accessible projects
+      if (dbProjects.length === 0) {
+        const allProjRes = await projectApi.list().catch(() => null);
+        if (allProjRes?.success && Array.isArray(allProjRes.data) && allProjRes.data.length > 0) {
+          dbProjects = allProjRes.data;
+          if (dbProjects[0]?.workspaceId) {
+            currentWsId = dbProjects[0].workspaceId;
+            setWorkspaceId(currentWsId);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("currentWorkspaceId", currentWsId);
+            }
+          }
+        }
+      }
+
+      setProjects(dbProjects);
     } catch (err) {
       console.error("Failed to load projects:", err);
     } finally {
@@ -112,17 +154,17 @@ export default function ProjectsPage() {
         try {
           const wsList = await workspaceApi.list();
           if (wsList?.success && wsList.data?.length > 0) {
-            currentWsId = wsList.data[0].id;
+            const wsWithProjects = wsList.data.find((w: any) => (w._count?.projects || 0) > 0);
+            currentWsId = wsWithProjects ? wsWithProjects.id : wsList.data[0].id;
             setWorkspaceId(currentWsId);
           }
-        } catch {
-          currentWsId = "ws_acme_eng";
-          setWorkspaceId(currentWsId);
-        }
+        } catch {}
       }
 
       if (!currentWsId) {
-        currentWsId = "ws_acme_eng";
+        setErrorMsg("No active workspace found to create this project in.");
+        setCreating(false);
+        return;
       }
 
       // Derive key if omitted
@@ -144,6 +186,7 @@ export default function ProjectsPage() {
         }
       } catch (apiErr: any) {
         console.warn("Backend project API creation notice:", apiErr?.message);
+        setErrorMsg(apiErr?.message || "Failed to create project on server");
       }
 
       // Fallback local representation if offline
@@ -154,19 +197,17 @@ export default function ProjectsPage() {
           key: projectKey,
           description: newProject.description.trim(),
           workspaceId: currentWsId,
-          _count: { issues: 0, members: 1 },
-          createdAt: new Date().toISOString(),
+          _count: { issues: 0, members: 1, sprints: 0 },
         };
       }
 
       setProjects((prev) => [createdProject, ...prev]);
+      setSuccessToast(`Project "${createdProject.name}" (${createdProject.key}) created successfully!`);
       setIsCreateOpen(false);
       setNewProject({ name: "", key: "", description: "" });
-      setSuccessToast(`Project "${createdProject.name}" created successfully!`);
-      setTimeout(() => setSuccessToast(""), 4000);
+      loadProjects(currentWsId);
     } catch (err: any) {
-      console.error("Create project error:", err);
-      setErrorMsg(err.message || "Failed to create project. Please check details and retry.");
+      setErrorMsg(err.message || "An unexpected error occurred while creating the project.");
     } finally {
       setCreating(false);
     }
@@ -202,16 +243,25 @@ export default function ProjectsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setErrorMsg("");
-            setIsCreateOpen(true);
-          }}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-colors cursor-pointer self-start sm:self-center"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Project</span>
-        </button>
+        {canCreateProject ? (
+          <button
+            onClick={() => {
+              setErrorMsg("");
+              setIsCreateOpen(true);
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-2 transition-colors cursor-pointer self-start sm:self-center"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Project</span>
+          </button>
+        ) : (
+          <div
+            className="px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium rounded-lg flex items-center gap-1.5 self-start sm:self-center cursor-not-allowed"
+            title="Only Admins and Project Managers can create new projects"
+          >
+            <span>Create Restricted ({userRole})</span>
+          </div>
+        )}
       </div>
 
       {/* Filter & Search Bar */}
@@ -227,6 +277,25 @@ export default function ProjectsPage() {
           />
         </div>
 
+        {workspaces.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap hidden md:inline">
+              Workspace:
+            </span>
+            <select
+              value={workspaceId}
+              onChange={(e) => handleWorkspaceChange(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              {workspaces.map((ws) => (
+                <option key={ws.id} value={ws.id}>
+                  {ws.name} {ws._count?.projects !== undefined ? `(${ws._count.projects} projects)` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="text-xs text-slate-500 px-2 font-medium">
           Showing <span className="font-bold text-slate-900">{filtered.length}</span> projects
         </div>
@@ -239,18 +308,40 @@ export default function ProjectsPage() {
         <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3">
           <FolderKanban className="w-10 h-10 text-slate-300 mx-auto" />
           <h3 className="text-sm font-bold text-slate-900">No projects found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Get started by initializing your team&apos;s first software engineering project.
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {workspaces.find((w) => w.id === workspaceId)?.name
+              ? `No software engineering projects have been created in ${workspaces.find((w) => w.id === workspaceId)?.name} yet.`
+              : "Get started by initializing your team's first software engineering project."}
           </p>
-          <button
-            onClick={() => {
-              setErrorMsg("");
-              setIsCreateOpen(true);
-            }}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer"
-          >
-            Create First Project
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            {canCreateProject && (
+              <button
+                onClick={() => {
+                  setErrorMsg("");
+                  setIsCreateOpen(true);
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer"
+              >
+                Create First Project
+              </button>
+            )}
+            {workspaces.length > 1 && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                <span>Or switch workspace:</span>
+                <select
+                  value={workspaceId}
+                  onChange={(e) => handleWorkspaceChange(e.target.value)}
+                  className="px-2.5 py-1.5 bg-slate-100 border border-slate-200 text-slate-800 rounded-lg text-xs font-medium outline-none cursor-pointer"
+                >
+                  {workspaces.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} ({w._count?.projects ?? 0} projects)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

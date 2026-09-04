@@ -40,8 +40,10 @@ import {
   Wifi,
   Sparkles,
   Database,
+  Eye,
 } from "lucide-react";
 import { workspaceApi, projectApi, issueApi } from "@/lib/api";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   KANBAN_COLUMNS,
   ISSUE_STATUS_CONFIG,
@@ -72,7 +74,13 @@ const TYPE_ICONS: Record<string, any> = {
 };
 
 // ─── Sortable Card Component ────────────────────
-function SortableCard({ issue }: { issue: KanbanIssue }) {
+function SortableCard({
+  issue,
+  canMoveIssues = true,
+}: {
+  issue: KanbanIssue;
+  canMoveIssues?: boolean;
+}) {
   const {
     attributes,
     listeners,
@@ -80,7 +88,11 @@ function SortableCard({ issue }: { issue: KanbanIssue }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: issue.id, data: { status: issue.status } });
+  } = useSortable({
+    id: issue.id,
+    data: { status: issue.status },
+    disabled: !canMoveIssues,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -90,7 +102,11 @@ function SortableCard({ issue }: { issue: KanbanIssue }) {
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
-      <IssueCard issue={issue} dragListeners={listeners} />
+      <IssueCard
+        issue={issue}
+        dragListeners={canMoveIssues ? listeners : undefined}
+        canMoveIssues={canMoveIssues}
+      />
     </div>
   );
 }
@@ -100,10 +116,12 @@ function IssueCard({
   issue,
   dragListeners,
   isOverlay,
+  canMoveIssues = true,
 }: {
   issue: KanbanIssue;
   dragListeners?: any;
   isOverlay?: boolean;
+  canMoveIssues?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const TypeIcon = TYPE_ICONS[issue.type] || ListTodo;
@@ -221,32 +239,33 @@ function IssueCard({
             </span>
           )}
 
-          {/* Phase 20 Attachment Badge */}
-          {Boolean(issue.attachmentsCount && issue.attachmentsCount > 0) && (
-            <span
-              title={`${issue.attachmentsCount} attachment(s)`}
-              className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200"
-            >
-              <Paperclip className="w-2.5 h-2.5 text-slate-400" />
-              <span>{issue.attachmentsCount}</span>
+          {/* Attachments */}
+          {(issue.attachmentsCount ?? 0) > 0 && (
+            <span className="flex items-center gap-1 text-slate-400 text-[11px]">
+              <Paperclip className="w-3 h-3" />
+              {issue.attachmentsCount}
             </span>
           )}
         </div>
 
-        {issue.assignee && (
-          <div
-            className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-2xs"
-            style={{
-              background: "linear-gradient(135deg, #4f46e5, #3b82f6)",
-            }}
-            title={issue.assignee.name}
-          >
-            {issue.assignee.name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")}
-          </div>
-        )}
+        {/* Assignee Avatar */}
+        <div className="flex items-center gap-1.5">
+          {issue.assignee ? (
+            <div
+              className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center text-[10px] font-bold"
+              title={issue.assignee.name}
+            >
+              {issue.assignee.name[0].toUpperCase()}
+            </div>
+          ) : (
+            <div
+              className="w-5 h-5 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[9px]"
+              title="Unassigned"
+            >
+              ?
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -256,9 +275,13 @@ function IssueCard({
 function KanbanColumn({
   status,
   issues,
+  canCreateIssue = true,
+  canMoveIssues = true,
 }: {
   status: string;
   issues: KanbanIssue[];
+  canCreateIssue?: boolean;
+  canMoveIssues?: boolean;
 }) {
   const config = ISSUE_STATUS_CONFIG[status as keyof typeof ISSUE_STATUS_CONFIG];
   const { openCreateIssue } = useUiStore();
@@ -279,13 +302,15 @@ function KanbanColumn({
             {issues.length}
           </span>
         </div>
-        <button
-          onClick={() => openCreateIssue(status)}
-          title={`Add issue to ${config?.label || status}`}
-          className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+        {canCreateIssue && (
+          <button
+            onClick={() => openCreateIssue(status)}
+            title={`Add issue to ${config?.label || status}`}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Cards */}
@@ -295,7 +320,7 @@ function KanbanColumn({
       >
         <div className="flex-1 space-y-2.5 min-h-[220px]">
           {issues.map((issue) => (
-            <SortableCard key={issue.id} issue={issue} />
+            <SortableCard key={issue.id} issue={issue} canMoveIssues={canMoveIssues} />
           ))}
         </div>
       </SortableContext>
@@ -306,34 +331,45 @@ function KanbanColumn({
 // ─── Main Board Page ────────────────────────────
 export default function BoardPage() {
   const { openCreateIssue } = useUiStore();
-  const { isConnected, lastEvent } = useRealtime("proj_speedyshop");
+  const { canCreateIssue, canMoveIssues, role: userRole } = usePermissions();
+  const [projectId, setProjectId] = useState<string>("");
+  const { isConnected, lastEvent } = useRealtime(projectId || undefined);
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [liveToast, setLiveToast] = useState<{ id: string; message: string; time: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
-  const [selectedSprint, setSelectedSprint] = useState<string>("Sprint 18");
+  const [selectedSprint, setSelectedSprint] = useState<string>("Sprint 1");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string>("proj_speedyshop");
 
-  // Initial Database Load & Firestore Real-Time Listener
+  // Initial Database Load & Real-Time Listener
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
 
     const loadLiveIssues = async () => {
       try {
-        const storedToken = localStorage.getItem("accessToken");
-        if (!storedToken) return;
+        const storedUser = localStorage.getItem("user");
+        if (!storedUser) return;
 
-        let activeProjectId = "proj_speedyshop";
+        let activeProjectId = "";
 
-        const wsRes = await workspaceApi.list();
-        if (wsRes.success && wsRes.data.length > 0) {
-          const projRes = await projectApi.list(wsRes.data[0].id);
-          if (projRes.success && projRes.data.length > 0) {
-            const p = projRes.data.find((item: any) => item.key === "SS") || projRes.data[0];
-            activeProjectId = p.id;
-            setProjectId(p.id);
+        const wsRes = await workspaceApi.list().catch(() => null);
+        if (wsRes?.success && wsRes.data.length > 0) {
+          const currentWsId = typeof window !== "undefined" ? localStorage.getItem("currentWorkspaceId") : null;
+          let targetWs = wsRes.data.find((w: any) => w.id === currentWsId);
+          if (!targetWs) {
+            targetWs = wsRes.data.find((w: any) => (w._count?.projects || 0) > 0) || wsRes.data[0];
+          }
+          if (targetWs) {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("currentWorkspaceId", targetWs.id);
+            }
+            const projRes = await projectApi.list(targetWs.id).catch(() => null);
+            if (projRes?.success && projRes.data.length > 0) {
+              const p = projRes.data[0];
+              activeProjectId = p.id;
+              setProjectId(p.id);
+            }
           }
         }
 
@@ -615,15 +651,34 @@ export default function BoardPage() {
           </div>
 
           {/* New Issue */}
-          <button
-            onClick={() => openCreateIssue()}
-            className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Issue
-          </button>
+          {canCreateIssue ? (
+            <button
+              onClick={() => openCreateIssue()}
+              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Issue
+            </button>
+          ) : (
+            <div
+              className="px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-500 text-xs font-medium rounded-lg flex items-center gap-1.5 cursor-not-allowed"
+              title="Issue creation restricted for Viewer role"
+            >
+              <span>Read-Only ({userRole})</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Read-Only Notice for Viewers */}
+      {!canMoveIssues && (
+        <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 font-medium animate-fade-in">
+          <Eye className="w-4 h-4 text-slate-500 shrink-0" />
+          <span>
+            <strong>Read-Only Mode:</strong> Your role ({userRole}) allows you to view board cards and tickets, but card dragging and ticket updates are disabled.
+          </span>
+        </div>
+      )}
 
       {/* ─── Kanban Board ───────────────────────── */}
       <DndContext
@@ -638,6 +693,8 @@ export default function BoardPage() {
               key={status}
               status={status}
               issues={issues}
+              canCreateIssue={canCreateIssue}
+              canMoveIssues={canMoveIssues}
             />
           ))}
         </div>

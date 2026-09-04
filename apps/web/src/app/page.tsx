@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
@@ -12,14 +12,18 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
+  ArrowLeft,
   Sparkles,
   Kanban,
   Calendar,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  Globe,
+  KeyRound,
+  RotateCw,
+  MailCheck,
 } from "lucide-react";
+import toast from "react-hot-toast";
 
 function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
@@ -63,8 +67,8 @@ function FeatureList() {
     },
     {
       icon: <ShieldCheck className="w-5 h-5 text-violet-600" />,
-      title: "Enterprise-Ready RBAC",
-      desc: "Granular permissions for Admins, Project Managers, Developers, and Viewers.",
+      title: "Enterprise-Ready 2FA & OTP",
+      desc: "Instant OTP verification and granular permissions for all team roles.",
     },
   ];
 
@@ -114,7 +118,7 @@ function MarketingPanel() {
           Intelligent issue tracking for modern teams.
         </h2>
         <p className="text-sm text-slate-600 leading-relaxed mb-6">
-          Sign in seamlessly with Google or Email. Synchronize your teams, sprints, and tasks across devices in real time.
+          Sign in seamlessly with Google, Password, or 6-digit Email OTP. Synchronize your teams, sprints, and tasks across devices in real time.
         </p>
 
         {/* Features List */}
@@ -194,6 +198,111 @@ function InputField({
   );
 }
 
+/**
+ * 6-Digit OTP Box Input Component
+ */
+function OtpPinBoxes({
+  digits,
+  setDigits,
+  onComplete,
+  disabled,
+}: {
+  digits: string[];
+  setDigits: React.Dispatch<React.SetStateAction<string[]>>;
+  onComplete?: (code: string) => void;
+  disabled?: boolean;
+}) {
+  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleChange = (index: number, val: string) => {
+    const clean = val.replace(/\D/g, "");
+    if (!clean) {
+      const next = [...digits];
+      next[index] = "";
+      setDigits(next);
+      return;
+    }
+
+    if (clean.length === 1) {
+      const next = [...digits];
+      next[index] = clean;
+      setDigits(next);
+      if (index < 5) {
+        inputsRef.current[index + 1]?.focus();
+      }
+      if (next.every((d) => d !== "") && onComplete) {
+        onComplete(next.join(""));
+      }
+    } else {
+      // Pasted multiple digits
+      const pasted = clean.slice(0, 6).split("");
+      const next = [...digits];
+      pasted.forEach((ch, idx) => {
+        if (idx < 6) next[idx] = ch;
+      });
+      setDigits(next);
+      const focusIndex = Math.min(pasted.length, 5);
+      inputsRef.current[focusIndex]?.focus();
+      if (next.every((d) => d !== "") && onComplete) {
+        onComplete(next.join(""));
+      }
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !digits[index] && index > 0) {
+      inputsRef.current[index - 1]?.focus();
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      inputsRef.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      inputsRef.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    const next = [...digits];
+    for (let i = 0; i < 6; i++) {
+      next[i] = pasted[i] || "";
+    }
+    setDigits(next);
+    const focusIndex = Math.min(pasted.length, 5);
+    inputsRef.current[focusIndex]?.focus();
+    if (next.every((d) => d !== "") && onComplete) {
+      onComplete(next.join(""));
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-2 sm:gap-2.5 my-2">
+      {digits.map((digit, idx) => (
+        <input
+          key={idx}
+          ref={(el) => {
+            inputsRef.current[idx] = el;
+          }}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={6}
+          value={digit}
+          disabled={disabled}
+          onChange={(e) => handleChange(idx, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(idx, e)}
+          onPaste={handlePaste}
+          className={`w-11 h-12 sm:w-12 sm:h-14 text-center text-xl font-bold font-mono rounded-xl border ${
+            digit
+              ? "border-indigo-600 bg-indigo-50/40 text-indigo-900 ring-2 ring-indigo-500/20"
+              : "border-slate-300 bg-white text-slate-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+          } outline-none transition-all shadow-2xs`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const {
@@ -203,10 +312,22 @@ export default function HomePage() {
     signUpWithEmail,
     signInWithGoogle,
     resetPassword,
+    sendSignupOtp,
+    verifySignupOtp,
+    sendLoginOtp,
+    verifyLoginOtp,
+    resendOtp,
+    forgotPasswordOtp,
   } = useAuth();
 
   const [isSignup, setIsSignup] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
+  const [isOtpMode, setIsOtpMode] = useState(false);
+  const [otpPurpose, setOtpPurpose] = useState<"SIGNUP" | "LOGIN">("SIGNUP");
+  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [countdown, setCountdown] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -228,11 +349,21 @@ export default function HomePage() {
     }
   }, [user, authLoading, router]);
 
-  // Clean error when switching sign in/up/forgot password
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  // Clean error when switching sign in/up/forgot password/OTP
   useEffect(() => {
     setError("");
     setSuccessMsg("");
-  }, [isSignup, isForgotPassword]);
+    setForgotPasswordSent(false);
+  }, [isSignup, isForgotPassword, isOtpMode]);
 
   // Handle Google Sign-in
   const handleGoogleSignIn = async () => {
@@ -249,33 +380,107 @@ export default function HomePage() {
     }
   };
 
-  // Handle Email / Password Auth
+  // Step 1: Initiate Auth / Send OTP
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim() || !emailRegex.test(email.trim())) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (isSignup && !fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
       if (isSignup) {
-        await signUpWithEmail(fullName || "DevFlow User", email, password, role, workspaceUrl);
-        setSuccessMsg("Account created! Redirecting to dashboard...");
+        // Sign Up with OTP flow
+        await sendSignupOtp({
+          email: email.trim(),
+          name: fullName.trim() || email.split("@")[0],
+          role,
+          workspaceUrl: workspaceUrl.trim() || undefined,
+        });
+        setOtpPurpose("SIGNUP");
+        setIsOtpMode(true);
+        setOtpDigits(["", "", "", "", "", ""]);
+        setCountdown(60);
+        setSuccessMsg(`We sent a 6-digit verification code to ${email.trim()}`);
+        toast.success(`Verification code sent to ${email.trim()}`);
       } else {
-        await signInWithEmail(email, password);
-        setSuccessMsg("Signed in! Redirecting to dashboard...");
+        // Passwordless OTP Sign-in flow
+        await sendLoginOtp(email.trim());
+        setOtpPurpose("LOGIN");
+        setIsOtpMode(true);
+        setOtpDigits(["", "", "", "", "", ""]);
+        setCountdown(60);
+        setSuccessMsg(`We sent a 6-digit sign-in code to ${email.trim()}`);
+        toast.success(`Sign-in code sent to ${email.trim()}`);
       }
-      router.push("/dashboard");
     } catch (err: any) {
       console.error("Email Auth Error:", err);
-      const code = err.code;
-      if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
-        setError("Invalid email or password. If this is a new account, please click 'Sign up'.");
-      } else if (code === "auth/email-already-in-use") {
-        setError("This email is already registered. Please sign in instead.");
-      } else if (code === "auth/weak-password") {
-        setError("Password should be at least 6 characters.");
+      setError(err?.message || "This email ID is invalid.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Verify OTP
+  const handleVerifyOtp = async (e?: React.FormEvent, customCode?: string) => {
+    if (e) e.preventDefault();
+    const code = customCode || otpDigits.join("");
+    if (code.length !== 6) {
+      setError("Please enter the complete 6-digit code.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      if (otpPurpose === "SIGNUP") {
+        await verifySignupOtp(email, code);
+        setSuccessMsg("Account verified successfully! Welcome to DevFlow.");
+        toast.success("Account verified successfully!");
       } else {
-        setError(err.message || "Authentication failed. Please check your credentials.");
+        await verifyLoginOtp(email, code);
+        setSuccessMsg("Signed in successfully! Redirecting...");
+        toast.success("Signed in successfully!");
       }
+      router.replace("/dashboard");
+    } catch (err: any) {
+      console.error("OTP Verification Error:", err);
+      setError(err.message || "Invalid or expired verification code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Resend OTP
+  const handleResendOtp = async () => {
+    if (countdown > 0 || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      await resendOtp({
+        email,
+        purpose: otpPurpose,
+        password: password || undefined,
+        name: fullName || undefined,
+        role: role || undefined,
+        workspaceUrl: workspaceUrl || undefined,
+      });
+      setCountdown(60);
+      setSuccessMsg(`New 6-digit verification code sent to ${email}`);
+      toast.success(`A fresh verification code has been sent to ${email}`);
+      setOtpDigits(["", "", "", "", "", ""]);
+    } catch (err: any) {
+      setError(err.message || "Failed to resend code. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -291,9 +496,9 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      await resetPassword(email);
-      setSuccessMsg("Password reset email sent! Check your inbox.");
-      setIsForgotPassword(false);
+      await forgotPasswordOtp(email.trim());
+      setForgotPasswordSent(true);
+      setSuccessMsg(`Password reset instructions sent to ${email}`);
     } catch (err: any) {
       console.error("Reset Password Error:", err);
       setError(err.message || "Failed to send reset email.");
@@ -319,23 +524,27 @@ export default function HomePage() {
                   <Layers className="w-4 h-4 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
-                  {isForgotPassword
+                  {isOtpMode
+                    ? "Verify Your Email"
+                    : isForgotPassword
                     ? "Reset your password"
                     : isSignup
                     ? "Create an account"
-                    : "Welcome back"}
+                    : "Sign in with OTP"}
                 </h2>
               </div>
               <p className="text-slate-600 text-sm">
-                {isForgotPassword
+                {isOtpMode
+                  ? `Enter the 6-digit code sent to ${email}`
+                  : isForgotPassword
                   ? "Enter your email to receive a password reset link."
                   : isSignup
-                  ? "Start managing issues with AI"
-                  : "Sign in to access your DevFlow workspaces"}
+                  ? "Start managing issues with AI and OTP verification"
+                  : "Receive a 6-digit one-time code to sign in instantly"}
               </p>
             </div>
 
-            {!isForgotPassword && (
+            {!isForgotPassword && !isOtpMode && (
               <>
                 {/* Google Sign-in Button */}
                 <button
@@ -374,40 +583,147 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* ── EMAIL / PASSWORD FORM ── */}
-            {isForgotPassword ? (
-              <form onSubmit={handleResetPassword} className="space-y-4">
-                <InputField
-                  label="Email Address"
-                  icon={<Mail className="w-4 h-4" />}
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="alice@devflow.io"
-                  disabled={loading}
-                />
+            {/* ── 1. OTP VERIFICATION FORM ── */}
+            {isOtpMode ? (
+              <form onSubmit={(e) => handleVerifyOtp(e)} className="space-y-5">
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center justify-between mb-3 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
+                      6-Digit Code
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsOtpMode(false)}
+                      className="text-indigo-600 hover:text-indigo-700 font-medium hover:underline cursor-pointer"
+                    >
+                      Change email
+                    </button>
+                  </div>
+
+                  <OtpPinBoxes
+                    digits={otpDigits}
+                    setDigits={setOtpDigits}
+                    disabled={loading}
+                    onComplete={(code) => handleVerifyOtp(undefined, code)}
+                  />
+
+                  <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                    <span>
+                      {countdown > 0 ? (
+                        <span className="text-slate-600">
+                          Resend code in <strong className="text-indigo-600 font-mono">{countdown}s</strong>
+                        </span>
+                      ) : (
+                        "Didn't receive the code?"
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={countdown > 0 || loading}
+                      className="text-indigo-600 hover:text-indigo-800 font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                      Resend OTP
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shadow-sm transition-all disabled:opacity-75 cursor-pointer"
+                  disabled={loading || otpDigits.some((d) => d === "")}
+                  className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shadow-sm transition-all disabled:opacity-60 cursor-pointer"
                 >
                   {loading ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
-                    "Send Reset Link"
+                    <>
+                      <span>{otpPurpose === "SIGNUP" ? "Verify & Create Account" : "Verify & Sign In"}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
                   )}
                 </button>
-                <div className="mt-4 text-center">
+
+                <div className="text-center">
                   <button
                     type="button"
-                    onClick={() => setIsForgotPassword(false)}
-                    className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition cursor-pointer"
+                    onClick={() => {
+                      setIsOtpMode(false);
+                      setError("");
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-indigo-600 transition cursor-pointer"
                   >
-                    Back to Sign In
+                    <ArrowLeft className="w-3 h-3" />
+                    Back to {isSignup ? "Sign Up" : "Sign In"}
                   </button>
                 </div>
               </form>
+            ) : isForgotPassword ? (
+              /* ── 2. FORGOT PASSWORD FORM ── */
+              forgotPasswordSent ? (
+                <div className="text-center py-4">
+                  <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xs">
+                    <CheckCircle2 className="w-7 h-7" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">Reset Link Sent!</h3>
+                  <p className="text-xs text-slate-600 mb-2">
+                    We have sent a password reset link to:
+                  </p>
+                  <div className="inline-block px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-indigo-700 font-semibold text-xs mb-3 font-mono">
+                    {email}
+                  </div>
+                  <p className="text-xs text-slate-500 mb-5 max-w-xs mx-auto">
+                    Please check your inbox (and spam folder) to reset your password.
+                  </p>
+                  <div className="space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotPasswordSent(false);
+                        setIsForgotPassword(false);
+                      }}
+                      className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xs cursor-pointer"
+                    >
+                      <span>Back to Sign In</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <InputField
+                    label="Email Address"
+                    icon={<Mail className="w-4 h-4" />}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="alice@devflow.io"
+                    disabled={loading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shadow-sm transition-all disabled:opacity-75 cursor-pointer"
+                  >
+                    {loading ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      "Send Reset Link"
+                    )}
+                  </button>
+                  <div className="mt-4 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsForgotPassword(false)}
+                      className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition cursor-pointer"
+                    >
+                      Back to Sign In
+                    </button>
+                  </div>
+                </form>
+              )
             ) : (
+              /* ── 3. EMAIL / PASSWORD / SIGNUP FORM ── */
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 {isSignup ? (
                   <>
@@ -432,18 +748,6 @@ export default function HomePage() {
                       disabled={loading}
                     />
 
-                    <InputField
-                      label="Password"
-                      icon={<Lock className="w-4 h-4" />}
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      rightIcon={showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      onRightClick={() => setShowPassword(!showPassword)}
-                      disabled={loading}
-                    />
-
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                         Workspace URL
@@ -452,9 +756,10 @@ export default function HomePage() {
                         <input
                           type="text"
                           value={workspaceUrl}
-                          onChange={(e) => setWorkspaceUrl(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                          onChange={(e) =>
+                            setWorkspaceUrl(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                          }
                           placeholder="my-company"
-                          required={isSignup}
                           disabled={loading}
                           className="block w-full px-3.5 py-2.5 bg-transparent text-slate-900 placeholder-slate-400 outline-none text-sm font-normal"
                         />
@@ -465,40 +770,16 @@ export default function HomePage() {
                     </div>
                   </>
                 ) : (
-                  <>
-                    <InputField
-                      label="Email Address"
-                      icon={<Mail className="w-4 h-4" />}
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="alice@devflow.io"
-                      disabled={loading}
-                    />
-
-                    <InputField
-                      label={
-                        <div className="flex items-center justify-between w-full">
-                          <span>Password</span>
-                          <button
-                            type="button"
-                            onClick={() => setIsForgotPassword(true)}
-                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition cursor-pointer"
-                          >
-                            Forgot password?
-                          </button>
-                        </div>
-                      }
-                      icon={<Lock className="w-4 h-4" />}
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      rightIcon={showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      onRightClick={() => setShowPassword(!showPassword)}
-                      disabled={loading}
-                    />
-                  </>
+                  <InputField
+                    label="Email Address"
+                    icon={<Mail className="w-4 h-4" />}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="alice@devflow.io"
+                    disabled={loading}
+                    required
+                  />
                 )}
 
                 <button
@@ -510,18 +791,26 @@ export default function HomePage() {
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
                     <>
-                      {isSignup ? "Create Account" : "Sign In"}
-                      <ArrowRight className="w-4 h-4" />
+                      {isSignup ? (
+                        <>
+                          <span>Verify with OTP & Sign Up</span>
+                          <KeyRound className="w-4 h-4" />
+                        </>
+                      ) : (
+                        <>
+                          <span>Send Sign-In Code</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
                     </>
                   )}
                 </button>
               </form>
             )}
-
           </div>
 
           {/* Toggle Sign Up / Sign In */}
-          {!isForgotPassword && (
+          {!isForgotPassword && !isOtpMode && (
             <div className="mt-5 text-center text-sm text-slate-600">
               {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
               <button
