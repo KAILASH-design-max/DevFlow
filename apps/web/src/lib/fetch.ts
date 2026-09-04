@@ -95,9 +95,9 @@ export async function fetchWithAuth<T = any>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  // Create AbortController with 15 second timeout for safety against hung connections
+  // Create AbortController with 45 second timeout for safety (accommodates free-tier backend cold starts)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
   try {
     let res = await fetch(url, {
