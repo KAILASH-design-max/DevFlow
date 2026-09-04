@@ -4,7 +4,7 @@
  */
 import { auth } from "./firebase";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 
 let inMemoryAccessToken: string | null = null;
 
