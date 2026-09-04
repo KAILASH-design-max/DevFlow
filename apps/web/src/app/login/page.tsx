@@ -38,7 +38,12 @@ function LoginForm() {
       }`;
       router.push(verifyUrl);
     } catch (err: any) {
-      setError(err?.message || "This email ID is invalid.");
+      const msg = err?.message || "This email ID is invalid.";
+      if (msg.includes("This email ID is invalid")) {
+        setError("No account found with this email address. Please sign up first.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -121,6 +126,15 @@ function LoginForm() {
               )}
             </button>
           </form>
+
+          <div className="mt-4 text-center">
+            <p className="text-sm text-slate-400">
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" className="font-semibold text-indigo-400 hover:text-indigo-300">
+                Sign up
+              </Link>
+            </p>
+          </div>
 
           <div className="mt-6 pt-6 border-t border-slate-800 text-center">
             <p className="text-xs text-slate-500">

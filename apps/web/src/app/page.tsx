@@ -424,7 +424,12 @@ export default function HomePage() {
       }
     } catch (err: any) {
       console.error("Email Auth Error:", err);
-      setError(err?.message || "This email ID is invalid.");
+      const msg = err?.message || "This email ID is invalid.";
+      if (msg.includes("This email ID is invalid") && !isSignup) {
+        setError("No account found with this email address. Please click 'Sign up' below to create a new account.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
