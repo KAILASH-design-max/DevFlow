@@ -281,14 +281,15 @@ export class EmailService {
     });
 
     // 1. Prioritize Resend HTTPS API if RESEND_API_KEY is configured (works on Render without port blocks)
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (resendApiKey) {
+    const rawResendApiKey = process.env.RESEND_API_KEY;
+    if (rawResendApiKey) {
+      const cleanResendKey = rawResendApiKey.trim().replace(/^["']|["']$/g, "");
       try {
-        const fromAddress = process.env.RESEND_FROM || process.env.EMAIL_FROM || "DevFlow Security <onboarding@resend.dev>";
+        const fromAddress = process.env.RESEND_FROM || "DevFlow Security <onboarding@resend.dev>";
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${resendApiKey.trim()}`,
+            "Authorization": `Bearer ${cleanResendKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -399,14 +400,15 @@ export class EmailService {
     const { html, text } = this.renderInvitationTemplate(params);
     const subject = `You've been invited to join ${workspaceName} on DevFlow`;
 
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (resendApiKey) {
+    const rawResendApiKey = process.env.RESEND_API_KEY;
+    if (rawResendApiKey) {
+      const cleanResendKey = rawResendApiKey.trim().replace(/^["']|["']$/g, "");
       try {
-        const fromAddress = process.env.RESEND_FROM || process.env.EMAIL_FROM || "DevFlow Security <onboarding@resend.dev>";
+        const fromAddress = process.env.RESEND_FROM || "DevFlow Security <onboarding@resend.dev>";
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${resendApiKey.trim()}`,
+            "Authorization": `Bearer ${cleanResendKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
