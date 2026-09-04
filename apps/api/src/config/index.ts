@@ -11,6 +11,10 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/devflow?schema=public";
 }
 
+if (!process.env.DIRECT_URL) {
+  process.env.DIRECT_URL = process.env.DATABASE_URL;
+}
+
 const stableDevSecret = process.env.JWT_SECRET || "dF!9xQ#mK7$pL2vR8@wN3hY6&jT0cA5eB4gU1sZ";
 
 export const config = {

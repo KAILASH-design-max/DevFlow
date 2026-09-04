@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 import path from "path";
 
-// Ensure DATABASE_URL is populated from .env or fallback
+// Ensure DATABASE_URL and DIRECT_URL are populated from .env or fallback
 if (!process.env.DATABASE_URL) {
   dotenv.config({ path: path.resolve(process.cwd(), ".env") });
   dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
@@ -13,6 +13,10 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/devflow?schema=public";
 }
 
+if (!process.env.DIRECT_URL) {
+  process.env.DIRECT_URL = process.env.DATABASE_URL;
+}
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 /**
@@ -21,8 +25,12 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  */
 function createPrismaClient(): PrismaClient {
   const isProd = (globalThis as any).process?.env?.NODE_ENV === "production";
+  const datasourceUrl =
+    process.env.DATABASE_URL ||
+    "postgresql://postgres:postgres@localhost:5432/devflow?schema=public";
   
   const client = new PrismaClient({
+    datasourceUrl,
     log: isProd ? ["error"] : ["error", "warn"],
     errorFormat: isProd ? "minimal" : "pretty",
   });
