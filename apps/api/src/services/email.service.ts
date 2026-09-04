@@ -1,3 +1,8 @@
+import dns from "node:dns";
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
+
 import nodemailer from "nodemailer";
 import { config } from "../config/index.js";
 
@@ -25,6 +30,7 @@ export class EmailService {
           host,
           port,
           secure: port === 465,
+          family: 4, // Strictly force IPv4 to prevent ENETUNREACH on cloud containers
           connectionTimeout: 4000,
           greetingTimeout: 4000,
           socketTimeout: 5000,
@@ -32,7 +38,7 @@ export class EmailService {
             user: smtpUser.trim(),
             pass: smtpPass.trim(),
           },
-        });
+        } as any);
         this.isSmtpConfigured = true;
       } else {
         // Fallback development/stream transporter
