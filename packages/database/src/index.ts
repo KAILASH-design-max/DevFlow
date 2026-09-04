@@ -14,7 +14,15 @@ function createPrismaClient(): PrismaClient {
     errorFormat: isProd ? "minimal" : "pretty",
   });
 
-  return client;
+  return client.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ args, query }) {
+          return withPrismaRetry(() => query(args), 3, 500);
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
