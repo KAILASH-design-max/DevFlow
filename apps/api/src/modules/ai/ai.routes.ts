@@ -3,6 +3,10 @@ import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { analyzeIssueSchema } from "@devflow/shared";
 import { AIService } from "./ai.service.js";
+import {
+  verifyProjectAccess,
+  verifySprintAccess,
+} from "../../middleware/authorizationHelpers.js";
 
 export const aiRouter = Router();
 
@@ -16,6 +20,11 @@ aiRouter.post(
     try {
       const { title, description } = req.body;
       const projectId = req.query.projectId as string | undefined;
+
+      // SECURITY: If projectId is provided, verify caller has access
+      if (projectId) {
+        await verifyProjectAccess(req.user!.userId, projectId);
+      }
 
       const analysis = await AIService.analyzeIssue(
         title,
@@ -37,6 +46,13 @@ aiRouter.post(
     try {
       const { title } = req.body;
       const projectId = req.query.projectId as string;
+
+      if (!projectId) {
+        return res.status(400).json({ success: false, error: "projectId query parameter is required" });
+      }
+
+      // SECURITY: Verify caller has access to the project
+      await verifyProjectAccess(req.user!.userId, projectId);
 
       const result = await AIService.detectDuplicates(title, projectId);
       res.json({ success: true, data: result });
@@ -74,6 +90,10 @@ aiRouter.post(
       if (!sprintId) {
         return res.status(400).json({ success: false, error: "sprintId is required" });
       }
+
+      // SECURITY: Verify caller has access to the sprint
+      await verifySprintAccess(req.user!.userId, sprintId);
+
       const retrospective = await AIService.generateRetrospective(sprintId);
       res.json({ success: true, data: retrospective });
     } catch (error) {
@@ -91,6 +111,13 @@ aiRouter.post(
       if (!projectId) {
         return res.status(400).json({ success: false, error: "projectId is required" });
       }
+
+      // SECURITY: Verify caller has access to project & sprint
+      await verifyProjectAccess(req.user!.userId, projectId);
+      if (sprintId) {
+        await verifySprintAccess(req.user!.userId, sprintId);
+      }
+
       const releaseNotes = await AIService.generateReleaseNotes({
         projectId,
         sprintId,

@@ -7,6 +7,7 @@ export function registerTenantIsolationIdorTests() {
     let victimWorkspace: any;
     let victimProject: any;
     let victimIssue: any;
+    let victimSprint: any;
 
     it("setup victim and attacker accounts in isolated workspaces", async () => {
       // 1. Victim setup (Alice)
@@ -28,6 +29,23 @@ export function registerTenantIsolationIdorTests() {
           }),
         });
         victimProject = createProj.data.data;
+      }
+
+      // Get or create victim sprint
+      const sprintRes = await apiRequest(`/api/sprints?projectId=${victimProject.id}`, { headers: victimHeaders });
+      if (sprintRes.ok && sprintRes.data?.data?.length > 0) {
+        victimSprint = sprintRes.data.data[0];
+      } else {
+        const createSprint = await apiRequest("/api/sprints", {
+          method: "POST",
+          headers: victimHeaders,
+          body: JSON.stringify({
+            name: "Victim Confidential Sprint",
+            projectId: victimProject.id,
+            status: "PLANNING",
+          }),
+        });
+        victimSprint = createSprint.data.data;
       }
 
       // Get or create victim issue
@@ -62,9 +80,20 @@ export function registerTenantIsolationIdorTests() {
       attackerToken = regRes.data.data.accessToken;
     });
 
-    it("should prevent unauthorized user from reading victim workspace", async () => {
+    it("should prevent unauthorized user from reading victim workspace (GET)", async () => {
       const res = await apiRequest(`/api/workspaces/${victimWorkspace.id}`, {
         headers: { Authorization: `Bearer ${attackerToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.data.success).toBe(false);
+    });
+
+    it("should prevent unauthorized user from updating victim workspace (PATCH)", async () => {
+      const res = await apiRequest(`/api/workspaces/${victimWorkspace.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${attackerToken}` },
+        body: JSON.stringify({ name: "Hostile Takeover Workspace" }),
       });
 
       expect(res.status).toBe(403);
@@ -80,6 +109,21 @@ export function registerTenantIsolationIdorTests() {
       expect(res.data.success).toBe(false);
     });
 
+    it("should prevent unauthorized user from creating issue in victim project (POST IDOR)", async () => {
+      const res = await apiRequest(`/api/issues?projectId=${victimProject.id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${attackerToken}` },
+        body: JSON.stringify({
+          title: "Malicious Injected Issue",
+          type: "BUG",
+          priority: "CRITICAL",
+        }),
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.data.success).toBe(false);
+    });
+
     it("should prevent unauthorized user from accessing victim issue details (IDOR)", async () => {
       const res = await apiRequest(`/api/issues/${victimIssue.id}`, {
         headers: { Authorization: `Bearer ${attackerToken}` },
@@ -89,12 +133,40 @@ export function registerTenantIsolationIdorTests() {
       expect(res.data.success).toBe(false);
     });
 
-    it("should prevent unauthorized user from mutating victim issue (IDOR)", async () => {
+    it("should prevent unauthorized user from mutating victim issue (PATCH IDOR)", async () => {
       const res = await apiRequest(`/api/issues/${victimIssue.id}`, {
         method: "PATCH",
         headers: { Authorization: `Bearer ${attackerToken}` },
         body: JSON.stringify({
           title: "Hacked by Attacker",
+        }),
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.data.success).toBe(false);
+    });
+
+    it("should prevent unauthorized user from posting comments to victim issue (POST IDOR)", async () => {
+      const res = await apiRequest("/api/comments", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${attackerToken}` },
+        body: JSON.stringify({
+          issueId: victimIssue.id,
+          content: "Unauthorized comment injection",
+        }),
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.data.success).toBe(false);
+    });
+
+    it("should prevent unauthorized user from modifying victim sprint (PATCH IDOR)", async () => {
+      if (!victimSprint) return;
+      const res = await apiRequest(`/api/sprints/${victimSprint.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${attackerToken}` },
+        body: JSON.stringify({
+          status: "COMPLETED",
         }),
       });
 

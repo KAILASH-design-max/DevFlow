@@ -2,10 +2,273 @@ import { Router, Request, Response, NextFunction } from "express";
 import { config } from "../../config/index.js";
 import { validate } from "../../middleware/validate.js";
 import { authenticate } from "../../middleware/auth.js";
+import {
+  authLimiter,
+  otpSendLimiter,
+  otpVerifyLimiter,
+  passwordResetLimiter,
+} from "../../middleware/rateLimiter.js";
 import { registerSchema, loginSchema } from "@devflow/shared";
 import { AuthService } from "./auth.service.js";
+import { OtpService } from "./otp.service.js";
+import { SecurityAuditService } from "./audit.service.js";
+import { EmailService } from "../../services/email.service.js";
 
 export const authRouter = Router();
+
+// ─── OTP: Send Sign Up Verification Code ────────
+authRouter.post(
+  "/otp/send-signup",
+  otpSendLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, name, password, role, workspaceUrl } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "Email is required" });
+      }
+      const result = await OtpService.sendSignupOtp({
+        email,
+        name,
+        password,
+        role,
+        workspaceUrl,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── OTP: Verify Sign Up & Create Account ───────
+authRouter.post(
+  "/otp/verify-signup",
+  otpVerifyLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, code, challengeId } = req.body;
+      if (!email || !code) {
+        return res.status(400).json({ success: false, error: "Email and 6-digit code are required" });
+      }
+      const { user, tokens, customToken } = await OtpService.verifySignupOtp({
+        email,
+        code,
+        challengeId,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+
+      res.cookie("accessToken", tokens.accessToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000,
+      });
+
+      res.cookie("refreshToken", tokens.refreshToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.status(201).json({
+        success: true,
+        authenticated: true,
+        redirectTo: "/dashboard",
+        customToken,
+        data: {
+          user,
+          accessToken: tokens.accessToken,
+          customToken,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── OTP: Send Login Verification Code (Passwordless) ──
+authRouter.post(
+  ["/request-otp", "/otp/send-login"],
+  otpSendLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const email = req.body?.email;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || typeof email !== "string" || !emailRegex.test(email.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address.",
+          error: "Please enter a valid email address.",
+        });
+      }
+      const result = await OtpService.sendLoginOtp({
+        email,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+      res.json({
+        success: true,
+        challengeId: result.challengeId,
+        message: result.message,
+        nextStep: "VERIFY_OTP",
+        data: result,
+      });
+    } catch (error: any) {
+      if (error?.status || error?.statusCode) {
+        return res.status(error.status || error.statusCode).json({
+          success: false,
+          message: error.message,
+          error: error.message,
+        });
+      }
+      next(error);
+    }
+  }
+);
+
+// ─── OTP: Verify Login & Issue Session Tokens ───
+authRouter.post(
+  ["/verify-otp", "/otp/verify-login"],
+  otpVerifyLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const email = req.body.email;
+      const code = req.body.otp || req.body.code;
+      const challengeId = req.body.challengeId;
+      if (!email || !code || typeof code !== "string" || !/^\d{6}$/.test(code.trim())) {
+        return res.status(400).json({
+          success: false,
+          error: "Valid email and 6-digit numeric code are required",
+        });
+      }
+      const { user, tokens, customToken } = await OtpService.verifyLoginOtp({
+        email,
+        code,
+        challengeId,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+
+      res.cookie("accessToken", tokens.accessToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000,
+      });
+
+      res.cookie("refreshToken", tokens.refreshToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      res.json({
+        success: true,
+        authenticated: true,
+        redirectTo: "/dashboard",
+        customToken,
+        data: {
+          user,
+          accessToken: tokens.accessToken,
+          customToken,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── OTP: Resend Verification Code ──────────────
+authRouter.post(
+  "/otp/resend",
+  otpSendLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, purpose, password, name, role, workspaceUrl } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "Email is required" });
+      }
+      const result = await OtpService.resendOtp({
+        email,
+        purpose: purpose || "SIGNUP",
+        password,
+        name,
+        role,
+        workspaceUrl,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Password Reset: Request OTP ────────────────
+authRouter.post(
+  ["/otp/forgot-password", "/forgot-password"],
+  passwordResetLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "Email is required" });
+      }
+      const result = await OtpService.sendPasswordResetOtp({
+        email,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Password Reset: Verify OTP & Update Password 
+authRouter.post(
+  ["/otp/reset-password", "/reset-password"],
+  passwordResetLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({
+          success: false,
+          error: "Email, 6-digit code, and new password are required",
+        });
+      }
+      const result = await OtpService.resetPasswordWithOtp({
+        email,
+        code,
+        newPassword,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── Ephemeral Test Inbox (Non-production test runner hook) ───
+if (config.nodeEnv !== "production") {
+  authRouter.get("/otp/test-inbox", (req: Request, res: Response) => {
+    const email = (req.query.email as string)?.trim().toLowerCase();
+    const code = email ? EmailService.getTestOtp(email) : undefined;
+    res.json({ success: true, code });
+  });
+}
 
 // ─── Register ───────────────────────────────────
 authRouter.post(
@@ -15,10 +278,17 @@ authRouter.post(
     try {
       const { user, tokens } = await AuthService.register(req.body);
 
+      res.cookie("accessToken", tokens.accessToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000,
+      });
+
       res.cookie("refreshToken", tokens.refreshToken, {
         httpOnly: true,
         secure: config.nodeEnv === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
@@ -43,10 +313,17 @@ authRouter.post(
     try {
       const { user, tokens } = await AuthService.login(req.body);
 
+      res.cookie("accessToken", tokens.accessToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000,
+      });
+
       res.cookie("refreshToken", tokens.refreshToken, {
         httpOnly: true,
         secure: config.nodeEnv === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
@@ -68,19 +345,32 @@ authRouter.post(
   "/refresh",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const refreshToken = req.cookies?.refreshToken;
+      const refreshToken =
+        req.cookies?.refreshToken ||
+        req.body?.refreshToken ||
+        (req.headers["x-refresh-token"] as string);
       const tokens = await AuthService.refreshToken(refreshToken);
+
+      res.cookie("accessToken", tokens.accessToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000,
+      });
 
       res.cookie("refreshToken", tokens.refreshToken, {
         httpOnly: true,
         secure: config.nodeEnv === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
 
       res.json({
         success: true,
-        data: { accessToken: tokens.accessToken },
+        data: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
       });
     } catch (error) {
       next(error);
@@ -96,7 +386,17 @@ authRouter.post(
       const refreshToken = req.cookies?.refreshToken;
       await AuthService.logout(refreshToken);
 
+      res.clearCookie("accessToken");
       res.clearCookie("refreshToken");
+
+      await SecurityAuditService.logEvent({
+        action: "LOGOUT",
+        email: (req as any).user?.email || "authenticated-user",
+        userId: (req as any).user?.userId || null,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
+
       res.json({ success: true, message: "Logged out successfully" });
     } catch (error) {
       next(error);
@@ -138,9 +438,9 @@ authRouter.patch(
   authenticate,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, bio, phone, company, location, website } = req.body;
+      const { name, bio, title, timezone, avatar, githubUsername, themePreference } = req.body;
       const safeData = Object.fromEntries(
-        Object.entries({ name, bio, phone, company, location, website }).filter(([_, v]) => v !== undefined)
+        Object.entries({ name, bio, title, timezone, avatar, githubUsername, themePreference }).filter(([_, v]) => v !== undefined)
       );
       const updated = await AuthService.updateProfile(req.user!.userId, safeData);
       res.json({ success: true, data: updated });

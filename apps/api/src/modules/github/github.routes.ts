@@ -117,6 +117,10 @@ githubRouter.get(
               <p>Completing authorization... You can close this window if it doesn't close automatically.</p>
             </div>
             <script>
+              try {
+                sessionStorage.setItem('devflow_pending_gh_token', ${JSON.stringify(token)});
+              } catch (e) {}
+
               if (window.opener) {
                 window.opener.postMessage(
                   { 
@@ -128,7 +132,7 @@ githubRouter.get(
                 );
                 setTimeout(() => window.close(), 1000);
               } else {
-                window.location.href = ${JSON.stringify(config.corsOrigin + '/dashboard/settings?tab=integrations&github_token=' + token)};
+                window.location.href = ${JSON.stringify(config.corsOrigin + '/dashboard/settings?tab=integrations&github_auth=connected')};
               }
             </script>
           </body>

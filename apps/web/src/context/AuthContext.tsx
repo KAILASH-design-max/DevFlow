@@ -3,8 +3,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User as FirebaseUser,
+  signInWithCustomToken,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithPopup,
   signInWithPhoneNumber,
   signOut,
@@ -12,10 +14,11 @@ import {
   updateProfile,
   RecaptchaVerifier,
   ConfirmationResult,
-  sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
-import { authApi } from "../lib/api";
+import { authApi, otpApi } from "../lib/api";
+import { setInMemoryAccessToken, getInMemoryAccessToken } from "../lib/fetch";
+import type { Role } from "@devflow/shared";
 
 export interface UserProfile {
   id: string;
@@ -24,9 +27,10 @@ export interface UserProfile {
   email: string | null;
   phoneNumber: string | null;
   avatar: string | null;
-  role: string;
+  role: Role | string;
   workspaceUrl?: string | null;
   provider: string;
+  emailVerified?: boolean;
   createdAt?: any;
 }
 
@@ -51,14 +55,41 @@ interface AuthContextType {
   signOutUser: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   resetPassword: (email: string) => Promise<void>;
+  // Passwordless Email OTP methods
+  requestOtp: (email: string) => Promise<any>;
+  verifyOtp: (email: string, otp: string) => Promise<void>;
+  sendSignupOtp: (data: { email: string; name?: string; password?: string; role?: string; workspaceUrl?: string }) => Promise<any>;
+  verifySignupOtp: (email: string, code: string) => Promise<void>;
+  sendLoginOtp: (email: string, password?: string) => Promise<any>;
+  verifyLoginOtp: (email: string, code: string) => Promise<void>;
+  resendOtp: (data: { email: string; purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET"; password?: string; name?: string; role?: string; workspaceUrl?: string }) => Promise<any>;
+  forgotPasswordOtp: (email: string) => Promise<any>;
+  resetPasswordWithOtp: (email: string, code: string, newPassword: string) => Promise<any>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("user");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return !localStorage.getItem("user");
+    }
+    return true;
+  });
 
   /**
    * Sync user profile via Express API (Prisma DB — single source of truth).
@@ -67,9 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const syncUserProfile = async (fbUser: FirebaseUser, extraData: Partial<UserProfile> = {}) => {
     try {
       const token = await fbUser.getIdToken();
-      if (typeof window !== "undefined") {
-        localStorage.setItem("accessToken", token);
-      }
+      setInMemoryAccessToken(token);
 
       // Sync user to Prisma DB via the Express API
       const syncRes = await authApi.firebaseSync({
@@ -111,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(fallbackProfile);
       if (typeof window !== "undefined") {
         const token = await fbUser.getIdToken().catch(() => "");
-        if (token) localStorage.setItem("accessToken", token);
+        if (token) setInMemoryAccessToken(token);
         localStorage.setItem("user", JSON.stringify(fallbackProfile));
       }
     }
@@ -123,11 +152,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (fbUser) {
         await syncUserProfile(fbUser);
       } else {
-        setUser(null);
+        // If there is an active DevFlow user session in localStorage, keep them logged in!
         if (typeof window !== "undefined") {
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("user");
+          const storedUser = localStorage.getItem("user");
+          if (storedUser) {
+            try {
+              const parsed = JSON.parse(storedUser);
+              if (parsed && (parsed.id || parsed.email)) {
+                setUser(parsed);
+                setLoading(false);
+                return;
+              }
+            } catch {
+              // ignore parse error
+            }
+          }
         }
+        setUser(null);
       }
       setLoading(false);
     });
@@ -176,8 +217,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           provider: "password",
         };
         setUser(profile);
+        setInMemoryAccessToken(accessToken);
         if (typeof window !== "undefined") {
-          localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("user", JSON.stringify(profile));
         }
         return;
@@ -228,8 +269,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           provider: "password",
         };
         setUser(profile);
+        setInMemoryAccessToken(accessToken);
         if (typeof window !== "undefined") {
-          localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("user", JSON.stringify(profile));
         }
         return;
@@ -280,12 +321,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOutUser = async () => {
+    try {
+      await authApi.logout();
+    } catch {}
     await signOut(auth);
+    setInMemoryAccessToken(null);
     setUser(null);
     setFirebaseUser(null);
     if (typeof window !== "undefined") {
       localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
+      sessionStorage.removeItem("accessToken");
     }
   };
 
@@ -293,14 +340,177 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (firebaseUser) {
       return firebaseUser.getIdToken();
     }
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("accessToken");
-    }
-    return null;
+    return getInMemoryAccessToken();
   };
 
   const resetPassword = async (email: string) => {
     await sendPasswordResetEmail(auth, email);
+  };
+
+  const requestOtp = async (email: string) => {
+    const res = await authApi.requestOtp(email);
+    if (!res.success) {
+      throw new Error(res.message || res.error || "Failed to send verification code");
+    }
+    return res.data || res;
+  };
+
+  const verifyOtp = async (email: string, otp: string) => {
+    const res = await authApi.verifyOtp(email, otp);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || res.message || "Invalid verification code");
+    }
+
+    const { user: apiUser, accessToken, customToken } = res.data;
+    setInMemoryAccessToken(accessToken);
+    if (customToken) {
+      try {
+        await signInWithCustomToken(auth, customToken);
+      } catch (fbErr) {
+        console.warn("[AuthContext] Firebase signInWithCustomToken notice:", fbErr);
+      }
+    }
+
+    const profile: UserProfile = {
+      id: apiUser.id,
+      uid: apiUser.id,
+      name: apiUser.name || "DevFlow User",
+      email: apiUser.email,
+      phoneNumber: null,
+      avatar: apiUser.avatar || null,
+      role: apiUser.role || "ADMIN",
+      provider: "otp",
+      emailVerified: apiUser.emailVerified ?? true,
+    };
+    setUser(profile);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(profile));
+    }
+  };
+
+  const sendSignupOtp = async (data: {
+    email: string;
+    name?: string;
+    password?: string;
+    role?: string;
+    workspaceUrl?: string;
+  }) => {
+    const res = await otpApi.sendSignupOtp(data);
+    if (!res.success) {
+      throw new Error(res.error || "Failed to send verification code");
+    }
+    return res.data;
+  };
+
+  const verifySignupOtp = async (email: string, code: string) => {
+    const res = await otpApi.verifySignupOtp(email, code);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "Invalid verification code");
+    }
+
+    const { user: apiUser, accessToken, refreshToken, customToken } = res.data;
+    setInMemoryAccessToken(accessToken);
+    if (refreshToken && typeof window !== "undefined") {
+      localStorage.setItem("refreshToken", refreshToken);
+    }
+    if (customToken) {
+      try {
+        await signInWithCustomToken(auth, customToken);
+      } catch (fbErr) {
+        console.warn("[AuthContext] Firebase signInWithCustomToken notice:", fbErr);
+      }
+    }
+
+    const profile: UserProfile = {
+      id: apiUser.id,
+      uid: apiUser.id,
+      name: apiUser.name || "DevFlow User",
+      email: apiUser.email,
+      phoneNumber: null,
+      avatar: apiUser.avatar || null,
+      role: "DEVELOPER",
+      provider: "otp",
+      emailVerified: apiUser.emailVerified ?? true,
+    };
+    setUser(profile);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(profile));
+    }
+  };
+
+  const sendLoginOtp = async (email: string, password?: string) => {
+    const res = await otpApi.sendLoginOtp(email);
+    if (!res.success) {
+      throw new Error(res.message || res.error || "Failed to send login code");
+    }
+    return res.data;
+  };
+
+  const verifyLoginOtp = async (email: string, code: string) => {
+    const res = await otpApi.verifyLoginOtp(email, code);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "Invalid verification code");
+    }
+
+    const { user: apiUser, accessToken, refreshToken, customToken } = res.data;
+    setInMemoryAccessToken(accessToken);
+    if (refreshToken && typeof window !== "undefined") {
+      localStorage.setItem("refreshToken", refreshToken);
+    }
+    if (customToken) {
+      try {
+        await signInWithCustomToken(auth, customToken);
+      } catch (fbErr) {
+        console.warn("[AuthContext] Firebase signInWithCustomToken notice:", fbErr);
+      }
+    }
+
+    const profile: UserProfile = {
+      id: apiUser.id,
+      uid: apiUser.id,
+      name: apiUser.name || "DevFlow User",
+      email: apiUser.email,
+      phoneNumber: null,
+      avatar: apiUser.avatar || null,
+      role: apiUser.role || "ADMIN",
+      provider: "otp",
+      emailVerified: apiUser.emailVerified ?? true,
+    };
+    setUser(profile);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(profile));
+    }
+  };
+
+  const resendOtp = async (data: {
+    email: string;
+    purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET";
+    password?: string;
+    name?: string;
+    role?: string;
+    workspaceUrl?: string;
+  }) => {
+    const res = await otpApi.resendOtp(data);
+    if (!res.success) {
+      throw new Error(res.error || "Failed to resend code");
+    }
+    return res.data;
+  };
+
+  const forgotPasswordOtp = async (email: string) => {
+    const res = await otpApi.forgotPassword(email);
+    if (!res.success) {
+      throw new Error(res.error || "Failed to send password reset code");
+    }
+    return res.data;
+  };
+
+  const resetPasswordWithOtp = async (email: string, code: string, newPassword: string) => {
+    const res = await otpApi.resetPassword({ email, code, newPassword });
+    if (!res.success) {
+      throw new Error(res.error || "Failed to reset password");
+    }
+    return res.data;
   };
 
   return (
@@ -319,6 +529,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOutUser,
         getIdToken,
         resetPassword,
+        requestOtp,
+        verifyOtp,
+        sendSignupOtp,
+        verifySignupOtp,
+        sendLoginOtp,
+        verifyLoginOtp,
+        resendOtp,
+        forgotPasswordOtp,
+        resetPasswordWithOtp,
       }}
     >
       {children}

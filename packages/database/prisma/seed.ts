@@ -4,12 +4,14 @@ import * as argon2 from "argon2";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Seeding DevFlow database...\n");
+  console.log("🌱 Seeding DevFlow Multi-Tenant PostgreSQL database...\n");
 
-  // ─── Create Users ───────────────────────────────
   const password = await argon2.hash("Password123", { type: argon2.argon2id });
 
-  const [alice, bob, carol, david] = await Promise.all([
+  // ─────────────────────────────────────────────
+  // 1. Create Users for Workspace A (Acme Engineering)
+  // ─────────────────────────────────────────────
+  const [alice, bob, carol, david, victor] = await Promise.all([
     prisma.user.upsert({
       where: { email: "alice@devflow.io" },
       update: {},
@@ -17,7 +19,9 @@ async function main() {
         email: "alice@devflow.io",
         name: "Alice Chen",
         password,
-        avatar: null,
+        title: "VP of Engineering",
+        bio: "Leading core platform initiatives and cloud architecture.",
+        timezone: "America/Los_Angeles",
       },
     }),
     prisma.user.upsert({
@@ -27,7 +31,9 @@ async function main() {
         email: "bob@devflow.io",
         name: "Bob Martinez",
         password,
-        avatar: null,
+        title: "Senior Fullstack Engineer",
+        bio: "Focused on checkout flow, API reliability, and UI components.",
+        timezone: "America/New_York",
       },
     }),
     prisma.user.upsert({
@@ -37,7 +43,9 @@ async function main() {
         email: "carol@devflow.io",
         name: "Carol Zhang",
         password,
-        avatar: null,
+        title: "Lead Product Manager",
+        bio: "Driving roadmap delivery, sprint velocity, and design alignment.",
+        timezone: "America/Chicago",
       },
     }),
     prisma.user.upsert({
@@ -47,55 +55,208 @@ async function main() {
         email: "david@devflow.io",
         name: "David Kim",
         password,
-        avatar: null,
+        title: "Staff QA & DevOps Engineer",
+        bio: "Automated regression pipelines, chaos testing, and observability.",
+        timezone: "Europe/London",
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: "victor@devflow.io" },
+      update: {},
+      create: {
+        email: "victor@devflow.io",
+        name: "Victor Vance",
+        password,
+        title: "Engineering Observer / Stakeholder",
+        bio: "Observing engineering metrics and sprint progress.",
+        timezone: "America/Los_Angeles",
       },
     }),
   ]);
 
-  console.log("✅ Created 4 users");
+  console.log("✅ Created Workspace A users (Alice, Bob, Carol, David, Victor)");
 
-  // ─── Create Workspace ───────────────────────────
-  const workspace = await prisma.workspace.upsert({
+  // ─────────────────────────────────────────────
+  // 2. Create Users for Workspace B (Globex Corporation)
+  // ─────────────────────────────────────────────
+  const [grace, dan, vince] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: "grace@globex.io" },
+      update: {},
+      create: {
+        email: "grace@globex.io",
+        name: "Grace Hopper",
+        password,
+        title: "CTO & Founder",
+        bio: "Building next-generation distributed logistics systems at Globex.",
+        timezone: "America/New_York",
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: "dan@globex.io" },
+      update: {},
+      create: {
+        email: "dan@globex.io",
+        name: "Dan Developer",
+        password,
+        title: "Backend Specialist",
+        bio: "Microservice performance, data pipelines, and Redis caching.",
+        timezone: "America/Chicago",
+      },
+    }),
+    prisma.user.upsert({
+      where: { email: "vince@globex.io" },
+      update: {},
+      create: {
+        email: "vince@globex.io",
+        name: "Vince Viewer",
+        password,
+        title: "External Auditor",
+        bio: "Compliance review and security auditing.",
+        timezone: "Europe/Berlin",
+      },
+    }),
+  ]);
+
+  console.log("✅ Created Workspace B users (Grace, Dan, Vince)");
+
+  // ─────────────────────────────────────────────
+  // 3. Workspace A (Acme Engineering)
+  // ─────────────────────────────────────────────
+  const workspaceA = await prisma.workspace.upsert({
     where: { slug: "acme-engineering" },
     update: {},
     create: {
       name: "Acme Engineering",
       slug: "acme-engineering",
-      description: "Main engineering workspace",
+      description: "Primary engineering organization for Acme platform",
       ownerId: alice.id,
     },
   });
 
-  // Add all users as workspace members
   for (const [user, role] of [
     [alice, "ADMIN"],
     [bob, "DEVELOPER"],
     [carol, "PROJECT_MANAGER"],
     [david, "TESTER"],
+    [victor, "VIEWER"],
   ] as const) {
     await prisma.workspaceMember.upsert({
       where: {
         userId_workspaceId: {
           userId: user.id,
-          workspaceId: workspace.id,
+          workspaceId: workspaceA.id,
         },
       },
-      update: {},
+      update: { role },
       create: {
         userId: user.id,
-        workspaceId: workspace.id,
+        workspaceId: workspaceA.id,
         role,
       },
     });
   }
 
-  console.log("✅ Created workspace: Acme Engineering");
+  await prisma.workspaceSecurityPolicy.upsert({
+    where: { workspaceId: workspaceA.id },
+    update: {},
+    create: {
+      workspaceId: workspaceA.id,
+      enforceTwoFactor: false,
+      restrictProjectCreation: true,
+      publicIssuesRead: false,
+      sessionTimeoutHours: 24,
+    },
+  });
 
-  // ─── Create Project ─────────────────────────────
-  const project = await prisma.project.upsert({
+  await prisma.workspaceSubscription.upsert({
+    where: { workspaceId: workspaceA.id },
+    update: {},
+    create: {
+      workspaceId: workspaceA.id,
+      tier: "ENTERPRISE",
+      interval: "ANNUAL",
+      status: "ACTIVE",
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      paymentBrand: "Visa",
+      paymentLast4: "4242",
+    },
+  });
+
+  console.log("✅ Configured Workspace A: Acme Engineering (5 members, Security Policy, Enterprise Subscription)");
+
+  // ─────────────────────────────────────────────
+  // 4. Workspace B (Globex Corporation)
+  // ─────────────────────────────────────────────
+  const workspaceB = await prisma.workspace.upsert({
+    where: { slug: "globex-corp" },
+    update: {},
+    create: {
+      name: "Globex Corporation",
+      slug: "globex-corp",
+      description: "Isolated enterprise logistics systems organization",
+      ownerId: grace.id,
+    },
+  });
+
+  for (const [user, role] of [
+    [grace, "ADMIN"],
+    [dan, "DEVELOPER"],
+    [vince, "VIEWER"],
+  ] as const) {
+    await prisma.workspaceMember.upsert({
+      where: {
+        userId_workspaceId: {
+          userId: user.id,
+          workspaceId: workspaceB.id,
+        },
+      },
+      update: { role },
+      create: {
+        userId: user.id,
+        workspaceId: workspaceB.id,
+        role,
+      },
+    });
+  }
+
+  await prisma.workspaceSecurityPolicy.upsert({
+    where: { workspaceId: workspaceB.id },
+    update: {},
+    create: {
+      workspaceId: workspaceB.id,
+      enforceTwoFactor: true,
+      restrictProjectCreation: true,
+      publicIssuesRead: false,
+      sessionTimeoutHours: 12,
+    },
+  });
+
+  await prisma.workspaceSubscription.upsert({
+    where: { workspaceId: workspaceB.id },
+    update: {},
+    create: {
+      workspaceId: workspaceB.id,
+      tier: "PRO",
+      interval: "MONTHLY",
+      status: "ACTIVE",
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      paymentBrand: "Mastercard",
+      paymentLast4: "8888",
+    },
+  });
+
+  console.log("✅ Configured Workspace B: Globex Corporation (3 members, Security Policy, Pro Subscription)");
+
+  // ─────────────────────────────────────────────
+  // 5. Workspace A Project (SpeedyShop — SS)
+  // ─────────────────────────────────────────────
+  const projectA = await prisma.project.upsert({
     where: {
       workspaceId_key: {
-        workspaceId: workspace.id,
+        workspaceId: workspaceA.id,
         key: "SS",
       },
     },
@@ -103,33 +264,26 @@ async function main() {
     create: {
       name: "SpeedyShop",
       key: "SS",
-      description: "E-commerce platform for fast delivery",
-      workspaceId: workspace.id,
+      description: "High-performance e-commerce delivery logistics platform",
+      workspaceId: workspaceA.id,
     },
   });
 
-  // Add members to project
-  for (const user of [alice, bob, carol, david]) {
+  for (const [u, r] of [
+    [alice, "ADMIN"],
+    [bob, "DEVELOPER"],
+    [carol, "PROJECT_MANAGER"],
+    [david, "TESTER"],
+    [victor, "VIEWER"],
+  ] as const) {
     await prisma.projectMember.upsert({
-      where: {
-        userId_projectId: {
-          userId: user.id,
-          projectId: project.id,
-        },
-      },
-      update: {},
-      create: {
-        userId: user.id,
-        projectId: project.id,
-        role: user.id === alice.id ? "ADMIN" : "DEVELOPER",
-      },
+      where: { userId_projectId: { userId: u.id, projectId: projectA.id } },
+      update: { role: r },
+      create: { userId: u.id, projectId: projectA.id, role: r },
     });
   }
 
-  console.log("✅ Created project: SpeedyShop (SS)");
-
-  // ─── Create Labels ─────────────────────────────
-  const labelData = [
+  const labelDataA = [
     { name: "checkout", color: "#ef4444" },
     { name: "payment", color: "#f97316" },
     { name: "authentication", color: "#8b5cf6" },
@@ -142,296 +296,200 @@ async function main() {
     { name: "search", color: "#a855f7" },
   ];
 
-  const labels: Record<string, string> = {};
-  for (const label of labelData) {
+  const labelsA: Record<string, string> = {};
+  for (const label of labelDataA) {
     const created = await prisma.label.upsert({
-      where: {
-        projectId_name: {
-          projectId: project.id,
-          name: label.name,
-        },
-      },
+      where: { projectId_name: { projectId: projectA.id, name: label.name } },
       update: {},
-      create: {
-        name: label.name,
-        color: label.color,
-        projectId: project.id,
-      },
+      create: { name: label.name, color: label.color, projectId: projectA.id },
     });
-    labels[label.name] = created.id;
+    labelsA[label.name] = created.id;
   }
 
-  console.log("✅ Created 10 labels");
-
-  // ─── Create Sprint ─────────────────────────────
-  const sprint = await prisma.sprint.create({
-    data: {
+  const sprintA = await prisma.sprint.upsert({
+    where: { id: "sprint_acme_18" },
+    update: {},
+    create: {
+      id: "sprint_acme_18",
       name: "Sprint 18",
-      goal: "Improve checkout flow and fix coupon bugs",
+      goal: "Enhance checkout throughput and payment reliability",
       status: "ACTIVE",
-      startDate: new Date("2026-08-11"),
-      endDate: new Date("2026-08-25"),
-      projectId: project.id,
+      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      projectId: projectA.id,
     },
   });
 
-  console.log("✅ Created sprint: Sprint 18");
-
-  // ─── Create Issues ─────────────────────────────
-  const issueData = [
-    {
-      number: 1,
-      title: "Checkout crashes when user applies SAVE20 coupon",
-      description:
-        "The application crashes immediately after applying the SAVE20 coupon code during checkout. The error occurs in the validation layer and affects all users.",
-      type: "BUG",
-      status: "IN_PROGRESS",
-      priority: "HIGH",
-      assigneeId: bob.id,
-      reporterId: david.id,
-      sprintId: sprint.id,
-      position: 0,
-      labelNames: ["checkout", "coupon"],
-    },
-    {
-      number: 2,
-      title: "Cart total shows negative value with multiple discounts",
-      description:
-        "When applying multiple discounts, the cart total can become negative. Need to add a floor of $0.",
-      type: "BUG",
-      status: "TODO",
-      priority: "CRITICAL",
-      assigneeId: bob.id,
-      reporterId: carol.id,
-      sprintId: sprint.id,
-      position: 0,
-      labelNames: ["cart", "checkout"],
-    },
-    {
-      number: 3,
-      title: "Implement product search with filters",
-      description:
-        "Add full-text search for products with filters for category, price range, and rating.",
-      type: "FEATURE",
-      status: "BACKLOG",
-      priority: "MEDIUM",
-      assigneeId: null,
-      reporterId: carol.id,
-      sprintId: null,
-      position: 0,
-      labelNames: ["search", "ui"],
-    },
-    {
-      number: 4,
-      title: "Payment gateway timeout after 30 seconds",
-      description:
-        "Payment processing times out after 30 seconds on slow connections. Need to increase timeout and add retry logic.",
-      type: "BUG",
-      status: "IN_REVIEW",
-      priority: "HIGH",
-      assigneeId: alice.id,
-      reporterId: david.id,
-      sprintId: sprint.id,
-      position: 0,
-      labelNames: ["payment", "api"],
-    },
-    {
-      number: 5,
-      title: "Add order tracking page",
-      description:
-        "Create a page where users can track their order status in real-time with delivery updates.",
-      type: "FEATURE",
-      status: "TODO",
-      priority: "MEDIUM",
-      assigneeId: bob.id,
-      reporterId: carol.id,
-      sprintId: sprint.id,
-      position: 1,
-      labelNames: ["ui"],
-    },
-    {
-      number: 6,
-      title: "Optimize product image loading",
-      description:
-        "Product images are loading slowly. Implement lazy loading and WebP format support.",
-      type: "TASK",
-      status: "DONE",
-      priority: "LOW",
-      assigneeId: alice.id,
-      reporterId: alice.id,
-      sprintId: sprint.id,
-      position: 0,
-      labelNames: ["performance", "ui"],
-    },
-    {
-      number: 7,
-      title: "Fix login session not persisting after page refresh",
-      description:
-        "Users are being logged out after refreshing the page. The session token is not being saved correctly.",
-      type: "BUG",
-      status: "DONE",
-      priority: "HIGH",
-      assigneeId: alice.id,
-      reporterId: bob.id,
-      sprintId: sprint.id,
-      position: 1,
-      labelNames: ["authentication", "security"],
-    },
-    {
-      number: 8,
-      title: "Add rate limiting to authentication endpoints",
-      description:
-        "Implement rate limiting on /login and /register to prevent brute force attacks. Use sliding window algorithm.",
-      type: "TASK",
-      status: "IN_PROGRESS",
-      priority: "MEDIUM",
-      assigneeId: alice.id,
-      reporterId: carol.id,
-      sprintId: sprint.id,
-      position: 1,
-      labelNames: ["security", "api"],
-    },
-    {
-      number: 9,
-      title: "As a user, I want to save items to a wishlist",
-      description:
-        "Users should be able to save products to a wishlist from product detail pages and the search results page.",
-      type: "STORY",
-      status: "BACKLOG",
-      priority: "LOW",
-      assigneeId: null,
-      reporterId: carol.id,
-      sprintId: null,
-      position: 1,
-      labelNames: ["ui"],
-    },
-    {
-      number: 10,
-      title: "API response time exceeds 500ms for product listing",
-      description:
-        "The /api/products endpoint is slow. Need to add database indexing and implement pagination.",
-      type: "BUG",
-      status: "TODO",
-      priority: "MEDIUM",
-      assigneeId: david.id,
-      reporterId: bob.id,
-      sprintId: sprint.id,
-      position: 2,
-      labelNames: ["api", "performance"],
-    },
+  const issueDataA = [
+    { number: 1, title: "Checkout crashes when applying SAVE20 coupon", description: "Null pointer validation error during discount calculation.", type: "BUG", status: "IN_PROGRESS", priority: "HIGH", storyPoints: 5, assigneeId: bob.id, reporterId: david.id, sprintId: sprintA.id, position: 0, labelNames: ["checkout", "coupon"] },
+    { number: 2, title: "Cart total displays negative value with stacked discounts", description: "Cart needs $0 baseline floor constraint.", type: "BUG", status: "TODO", priority: "CRITICAL", storyPoints: 8, assigneeId: bob.id, reporterId: carol.id, sprintId: sprintA.id, position: 0, labelNames: ["cart", "checkout"] },
+    { number: 3, title: "Implement elastic product search with faceted filters", description: "Add typeahead search with pricing and inventory facets.", type: "FEATURE", status: "BACKLOG", priority: "MEDIUM", storyPoints: 5, assigneeId: null, reporterId: carol.id, sprintId: null, position: 0, labelNames: ["search", "ui"] },
+    { number: 4, title: "Payment gateway timeout retry circuit breaker", description: "Add idempotent retry headers on 504 gateway timeouts.", type: "BUG", status: "IN_REVIEW", priority: "HIGH", storyPoints: 3, assigneeId: alice.id, reporterId: david.id, sprintId: sprintA.id, position: 0, labelNames: ["payment", "api"] },
+    { number: 5, title: "Add real-time order tracking map", description: "Live GPS driver status tracking via SSE.", type: "FEATURE", status: "TODO", priority: "MEDIUM", storyPoints: 8, assigneeId: bob.id, reporterId: carol.id, sprintId: sprintA.id, position: 1, labelNames: ["ui"] },
+    { number: 6, title: "Optimize product catalog WebP image caching", description: "Implement CDN edge caching and responsive srcset.", type: "TASK", status: "DONE", priority: "LOW", storyPoints: 2, assigneeId: alice.id, reporterId: alice.id, sprintId: sprintA.id, position: 0, labelNames: ["performance", "ui"] },
+    { number: 7, title: "Fix session persistence across tab navigation", description: "Handle cookie refresh tokens gracefully on page reload.", type: "BUG", status: "DONE", priority: "HIGH", storyPoints: 3, assigneeId: alice.id, reporterId: bob.id, sprintId: sprintA.id, position: 1, labelNames: ["authentication", "security"] },
+    { number: 8, title: "Implement rate limiting on authentication routes", description: "Sliding window rate limit on login/register endpoints.", type: "TASK", status: "IN_PROGRESS", priority: "MEDIUM", storyPoints: 3, assigneeId: alice.id, reporterId: carol.id, sprintId: sprintA.id, position: 1, labelNames: ["security", "api"] },
+    { number: 9, title: "User wishlist and shared shopping list sync", description: "Save wishlist items across mobile and web sessions.", type: "STORY", status: "BACKLOG", priority: "LOW", storyPoints: 5, assigneeId: null, reporterId: carol.id, sprintId: null, position: 1, labelNames: ["ui"] },
+    { number: 10, title: "Product listing query optimization under 100ms", description: "Add database composite indexes and cursor pagination.", type: "BUG", status: "TODO", priority: "MEDIUM", storyPoints: 3, assigneeId: david.id, reporterId: bob.id, sprintId: sprintA.id, position: 2, labelNames: ["api", "performance"] },
   ];
 
-  for (const issue of issueData) {
+  for (const issue of issueDataA) {
     const { labelNames, ...data } = issue;
     const created = await prisma.issue.upsert({
-      where: {
-        projectId_number: {
-          projectId: project.id,
-          number: data.number,
-        },
-      },
-      update: {
-        ...data,
-      },
-      create: {
-        ...data,
-        projectId: project.id,
-      },
+      where: { projectId_number: { projectId: projectA.id, number: data.number } },
+      update: { ...data },
+      create: { ...data, projectId: projectA.id },
     });
 
-    // Add labels
     for (const labelName of labelNames) {
-      if (labels[labelName]) {
+      if (labelsA[labelName]) {
         await prisma.issueLabel.upsert({
-          where: {
-            issueId_labelId: {
-              issueId: created.id,
-              labelId: labels[labelName],
-            },
-          },
+          where: { issueId_labelId: { issueId: created.id, labelId: labelsA[labelName] } },
           update: {},
-          create: {
-            issueId: created.id,
-            labelId: labels[labelName],
-          },
+          create: { issueId: created.id, labelId: labelsA[labelName] },
         });
       }
     }
   }
 
-  console.log("✅ Created 10 issues");
-
-  // ─── Create Comments ───────────────────────────
-  const firstIssue = await prisma.issue.findFirst({
-    where: { projectId: project.id, number: 1 },
+  const firstIssueA = await prisma.issue.findFirst({
+    where: { projectId: projectA.id, number: 1 },
   });
 
-  if (firstIssue) {
-    const existingComments = await prisma.comment.count({ where: { issueId: firstIssue.id } });
-    if (existingComments === 0) {
+  if (firstIssueA) {
+    const countA = await prisma.comment.count({ where: { issueId: firstIssueA.id } });
+    if (countA === 0) {
       await prisma.comment.createMany({
         data: [
-          {
-            content:
-              "The crash happens in the validation layer. I traced it to the coupon discount calculation.",
-            issueId: firstIssue.id,
-            authorId: bob.id,
-          },
-          {
-            content:
-              "I can reproduce this reliably on mobile too. The SAVE10 coupon works fine though.",
-            issueId: firstIssue.id,
-            authorId: david.id,
-          },
-          {
-            content:
-              "Looks like the percentage calculation doesn't account for the minimum order amount. Working on a fix.",
-            issueId: firstIssue.id,
-            authorId: bob.id,
-          },
+          { content: "Traced the root cause to coupon discount percentage calculation.", issueId: firstIssueA.id, authorId: bob.id },
+          { content: "Reproducible on iOS mobile app as well.", issueId: firstIssueA.id, authorId: david.id },
+          { content: "Fix verified in staging environment.", issueId: firstIssueA.id, authorId: bob.id },
         ],
       });
     }
   }
 
-  console.log("✅ Created 3 comments");
+  console.log("✅ Seeded Workspace A Project (SpeedyShop — 10 issues, 10 labels, Sprint 18, comments)");
 
-  // ─── Create Notifications ──────────────────────
-  const existingNotifications = await prisma.notification.count();
-  if (existingNotifications === 0) {
+  // ─────────────────────────────────────────────
+  // 6. Workspace B Project (Globex Core — GC)
+  // ─────────────────────────────────────────────
+  const projectB = await prisma.project.upsert({
+    where: {
+      workspaceId_key: {
+        workspaceId: workspaceB.id,
+        key: "GC",
+      },
+    },
+    update: {},
+    create: {
+      name: "Globex Core",
+      key: "GC",
+      description: "Automated logistics and supply chain routing core engine",
+      workspaceId: workspaceB.id,
+    },
+  });
+
+  for (const [u, r] of [
+    [grace, "ADMIN"],
+    [dan, "DEVELOPER"],
+    [vince, "VIEWER"],
+  ] as const) {
+    await prisma.projectMember.upsert({
+      where: { userId_projectId: { userId: u.id, projectId: projectB.id } },
+      update: { role: r },
+      create: { userId: u.id, projectId: projectB.id, role: r },
+    });
+  }
+
+  const labelDataB = [
+    { name: "routing", color: "#3b82f6" },
+    { name: "telemetry", color: "#06b6d4" },
+    { name: "infra", color: "#8b5cf6" },
+    { name: "security", color: "#ec4899" },
+    { name: "dispatch", color: "#f97316" },
+  ];
+
+  const labelsB: Record<string, string> = {};
+  for (const label of labelDataB) {
+    const created = await prisma.label.upsert({
+      where: { projectId_name: { projectId: projectB.id, name: label.name } },
+      update: {},
+      create: { name: label.name, color: label.color, projectId: projectB.id },
+    });
+    labelsB[label.name] = created.id;
+  }
+
+  const sprintB = await prisma.sprint.upsert({
+    where: { id: "sprint_globex_1" },
+    update: {},
+    create: {
+      id: "sprint_globex_1",
+      name: "Sprint 1 — Routing Core",
+      goal: "Initialize high-concurrency dispatch queue",
+      status: "ACTIVE",
+      startDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() + 11 * 24 * 60 * 60 * 1000),
+      projectId: projectB.id,
+    },
+  });
+
+  const issueDataB = [
+    { number: 1, title: "Setup Kafka event bus for real-time fleet telemetry", description: "Stream vehicle coordinates with partition key by region.", type: "FEATURE", status: "IN_PROGRESS", priority: "HIGH", storyPoints: 8, assigneeId: dan.id, reporterId: grace.id, sprintId: sprintB.id, position: 0, labelNames: ["telemetry", "infra"] },
+    { number: 2, title: "Optimize Dijkstra routing algorithm for multi-stop delivery", description: "Reduce path computation from O(V^2) to O(E + V log V).", type: "TASK", status: "TODO", priority: "CRITICAL", storyPoints: 13, assigneeId: dan.id, reporterId: grace.id, sprintId: sprintB.id, position: 0, labelNames: ["routing"] },
+    { number: 3, title: "Enforce mTLS certificate authentication between fleet gateways", description: "Prevent rogue telemetry nodes from injecting false coordinates.", type: "TASK", status: "DONE", priority: "CRITICAL", storyPoints: 5, assigneeId: grace.id, reporterId: grace.id, sprintId: sprintB.id, position: 0, labelNames: ["security", "infra"] },
+  ];
+
+  for (const issue of issueDataB) {
+    const { labelNames, ...data } = issue;
+    const created = await prisma.issue.upsert({
+      where: { projectId_number: { projectId: projectB.id, number: data.number } },
+      update: { ...data },
+      create: { ...data, projectId: projectB.id },
+    });
+
+    for (const labelName of labelNames) {
+      if (labelsB[labelName]) {
+        await prisma.issueLabel.upsert({
+          where: { issueId_labelId: { issueId: created.id, labelId: labelsB[labelName] } },
+          update: {},
+          create: { issueId: created.id, labelId: labelsB[labelName] },
+        });
+      }
+    }
+  }
+
+  console.log("✅ Seeded Workspace B Project (Globex Core — 3 issues, 5 labels, Sprint 1)");
+
+  // ─────────────────────────────────────────────
+  // 7. Notifications
+  // ─────────────────────────────────────────────
+  const notifCount = await prisma.notification.count();
+  if (notifCount === 0) {
     await prisma.notification.createMany({
       data: [
-        {
-          type: "ISSUE_ASSIGNED",
-          title: "Issue assigned to you",
-          message: 'You were assigned to "Checkout crashes when user applies SAVE20 coupon"',
-          userId: bob.id,
-          isRead: false,
-        },
-        {
-          type: "ISSUE_COMMENTED",
-          title: "New comment on your issue",
-          message: 'Bob commented on "Checkout crashes when user applies SAVE20 coupon"',
-          userId: david.id,
-          isRead: true,
-        },
-        {
-          type: "SPRINT_STARTED",
-          title: "Sprint started",
-          message: "Sprint 18 has started. Good luck team!",
-          userId: alice.id,
-          isRead: false,
-        },
+        { type: "ISSUE_ASSIGNED", title: "Issue assigned to you", message: 'You were assigned to "Checkout crashes when applying SAVE20 coupon"', userId: bob.id, isRead: false },
+        { type: "ISSUE_COMMENTED", title: "New comment on your issue", message: 'Bob commented on "Checkout crashes when applying SAVE20 coupon"', userId: david.id, isRead: true },
+        { type: "SPRINT_STARTED", title: "Sprint started", message: "Sprint 18 has started. Good luck Acme team!", userId: alice.id, isRead: false },
+        { type: "ISSUE_ASSIGNED", title: "Globex Task Assigned", message: 'You were assigned to "Setup Kafka event bus for real-time fleet telemetry"', userId: dan.id, isRead: false },
+        { type: "SPRINT_STARTED", title: "Globex Sprint Started", message: "Sprint 1 — Routing Core is now live!", userId: grace.id, isRead: false },
       ],
     });
   }
 
-  console.log("✅ Created 3 notifications");
-  console.log("\n🎉 Seed completed successfully!");
-  console.log("\n📧 Login credentials:");
-  console.log("   Email: alice@devflow.io");
-  console.log("   Password: Password123");
-  console.log("   (All 4 users have the same password)");
+  console.log("✅ Seeded multi-tenant notifications");
+  console.log("\n🎉 Multi-Tenant PostgreSQL Seeding Completed Successfully!");
+  console.log("\n📧 Seed Credentials:");
+  console.log("   Workspace A (Acme):");
+  console.log("     - Admin:     alice@devflow.io  / Password123");
+  console.log("     - Developer: bob@devflow.io    / Password123");
+  console.log("     - PM:        carol@devflow.io  / Password123");
+  console.log("     - Tester:    david@devflow.io  / Password123");
+  console.log("     - Viewer:    victor@devflow.io / Password123");
+  console.log("   Workspace B (Globex):");
+  console.log("     - Admin:     grace@globex.io   / Password123");
+  console.log("     - Developer: dan@globex.io     / Password123");
+  console.log("     - Viewer:    vince@globex.io   / Password123");
 }
 
 main()

@@ -28,13 +28,18 @@ export async function authenticate(
   next: NextFunction
 ) {
   try {
-    const authHeader = req.headers.authorization;
+    let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      throw createError("Authentication required", 401);
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    } else if (req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
     }
 
-    const token = authHeader.split(" ")[1];
+    if (!token) {
+      throw createError("Authentication required", 401);
+    }
 
     // 1. Try Firebase ID Token first
     try {
@@ -67,6 +72,21 @@ export async function authenticate(
       userId: decoded.userId,
       email: decoded.email,
     };
+
+    // Access Control: Block unverified email accounts from workspace resources
+    const isAuthRoute = req.baseUrl?.includes("/auth") || req.path?.startsWith("/auth");
+    if (!isAuthRoute && req.user) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+        select: { emailVerified: true },
+      });
+      if (user && user.emailVerified === false) {
+        throw createError(
+          "Email verification required. Please verify your email before accessing workspace resources.",
+          403
+        );
+      }
+    }
 
     next();
   } catch (error) {
@@ -166,3 +186,32 @@ export function authorizeProject(...allowedRoles: string[]) {
     }
   };
 }
+
+/**
+ * Middleware: Explicitly require verified email status
+ */
+export async function requireVerifiedEmail(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+) {
+  try {
+    if (!req.user) {
+      throw createError("Authentication required", 401);
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { emailVerified: true },
+    });
+    if (user && user.emailVerified === false) {
+      throw createError(
+        "Email verification required. Please verify your email before accessing workspace resources.",
+        403
+      );
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+

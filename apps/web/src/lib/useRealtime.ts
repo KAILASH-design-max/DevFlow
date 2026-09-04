@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { getInMemoryAccessToken } from "./fetch";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -20,10 +21,10 @@ export function useRealtime(projectId?: string, onEvent?: (event: RealtimeEvent)
     if (typeof window === "undefined") return;
 
     try {
-      const token = localStorage.getItem("accessToken");
+      const token = getInMemoryAccessToken();
       const url = new URL(`${API_BASE}/api/realtime/events`);
       if (projectId) url.searchParams.append("projectId", projectId);
-      if (token) url.searchParams.append("token", token); // Backend support for SSE auth
+      if (token) url.searchParams.append("token", token);
 
       const es = new EventSource(url.toString(), { withCredentials: true });
       eventSourceRef.current = es;

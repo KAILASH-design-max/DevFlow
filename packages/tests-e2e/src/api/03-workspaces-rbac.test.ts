@@ -5,6 +5,7 @@ export function registerWorkspacesRbacTests() {
   describe("API Suite 03: Workspaces, Security Policies & RBAC", () => {
     it("should list accessible workspaces with active members", async () => {
       const headers = await getAuthHeaders();
+      await getTestWorkspace();
       const res = await apiRequest("/api/workspaces", { headers });
 
       expect(res.status).toBe(200);

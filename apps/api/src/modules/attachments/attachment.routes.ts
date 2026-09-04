@@ -4,6 +4,10 @@ import { createError } from "../../middleware/errorHandler.js";
 import { AttachmentService } from "./attachment.service.js";
 import { StorageService } from "../../services/storage.service.js";
 import { config } from "../../config/index.js";
+import {
+  verifyIssueAccess,
+  verifyAttachmentAccess,
+} from "../../middleware/authorizationHelpers.js";
 
 export const attachmentRouter = Router();
 
@@ -101,6 +105,9 @@ attachmentRouter.post(
       const { issueId } = req.params;
       const userId = req.user!.userId;
 
+      // SECURITY: Verify caller has access to the target issue & project
+      await verifyIssueAccess(userId, issueId as string);
+
       // Parse uploaded file
       const parsedFile = await parseMultipartBuffer(req);
 
@@ -145,6 +152,9 @@ attachmentRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { issueId } = req.params;
+      // SECURITY: Verify caller has access to the target issue & project
+      await verifyIssueAccess(req.user!.userId, issueId as string);
+
       const attachments = await AttachmentService.getIssueAttachments(issueId as string);
       res.json({ success: true, data: attachments });
     } catch (error) {
@@ -161,6 +171,9 @@ attachmentRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { attachmentId } = req.params;
+      // SECURITY: Verify caller has access to the attachment's issue & project
+      await verifyAttachmentAccess(req.user!.userId, attachmentId as string);
+
       const expiresIn = parseInt(req.query.expiresIn as string) || 3600;
       const attachment = await AttachmentService.getAttachment(attachmentId as string);
       if (!attachment) throw createError("Attachment not found", 404);
@@ -182,6 +195,9 @@ attachmentRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { attachmentId } = req.params;
+      // SECURITY: Verify caller has access to the attachment's issue & project
+      await verifyAttachmentAccess(req.user!.userId, attachmentId as string);
+
       const preview = await AttachmentService.getLogPreview(attachmentId as string);
       res.json({ success: true, data: preview });
     } catch (error) {
@@ -200,6 +216,10 @@ attachmentRouter.delete(
     try {
       const { attachmentId } = req.params;
       const userId = req.user!.userId;
+
+      // SECURITY: Verify caller has access to the attachment's issue & project
+      await verifyAttachmentAccess(userId, attachmentId as string);
+
       const result = await AttachmentService.deleteAttachment(userId, attachmentId as string);
       res.json(result);
     } catch (error) {

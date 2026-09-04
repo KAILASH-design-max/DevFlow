@@ -54,6 +54,11 @@ export interface DomainEvents {
     prUrl: string;
     trigger: string; // e.g. "pr_opened", "pr_merged", "pr_closed"
   };
+  "subscription.updated": {
+    workspaceId: string;
+    tier: string;
+    interval: string;
+  };
 }
 
 class AppEventEmitter extends EventEmitter {

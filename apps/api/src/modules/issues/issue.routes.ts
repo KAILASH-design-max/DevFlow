@@ -125,10 +125,18 @@ issueRouter.delete(
   "/:issueId",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const userId = req.user!.userId;
       // SECURITY: Verify user has access to this issue's project
-      await verifyIssueAccess(req.user!.userId, req.params.issueId as string);
+      const { issue, member } = await verifyIssueAccess(userId, req.params.issueId as string);
 
-      await IssueService.deleteIssue(req.user!.userId, req.params.issueId as string);
+      // Only ADMIN, PROJECT_MANAGER, or the original issue reporter can delete an issue
+      const isAdminOrPm = member.role === "ADMIN" || member.role === "PROJECT_MANAGER";
+      const isReporter = (issue as any).reporterId === userId;
+      if (!isAdminOrPm && !isReporter) {
+        throw createError("Only project managers, admins, or the issue reporter can delete this issue", 403);
+      }
+
+      await IssueService.deleteIssue(userId, req.params.issueId as string);
       res.json({ success: true, message: "Issue deleted" });
     } catch (error) {
       next(error);

@@ -118,6 +118,7 @@ export const updateIssueSchema = createIssueSchema.partial().extend({
 
 export const createCommentSchema = z.object({
   content: z.string().min(1, "Comment cannot be empty").max(5000),
+  issueId: z.string().optional(),
 });
 
 // ─────────────────────────────────────────────
@@ -198,6 +199,18 @@ export type CreateSprintInput = z.infer<typeof createSprintSchema>;
 export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
 export type CreateLabelInput = z.infer<typeof createLabelSchema>;
 export type AnalyzeIssueInput = z.infer<typeof analyzeIssueSchema>;
+export const aiAnalysisResultSchema = z.object({
+  suggestedCategory: z.string().default("TASK"),
+  suggestedPriority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("MEDIUM"),
+  confidence: z.number().min(0).max(1).default(0.8),
+  reasoning: z.string().default(""),
+  suggestedLabels: z.array(z.string()).default([]),
+  possibleCauses: z.array(z.string()).default([]),
+  reproductionSteps: z.array(z.string()).default([]),
+  acceptanceCriteria: z.array(z.string()).default([]),
+  suggestedSubtasks: z.array(z.string()).default([]),
+});
+
+export type AiAnalysisResultInput = z.infer<typeof aiAnalysisResultSchema>;
 export type VerifyPatInput = z.infer<typeof verifyPatSchema>;
 export type LinkRepoInput = z.infer<typeof linkRepoSchema>;
-

@@ -16,7 +16,7 @@ commentRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { content } = req.body;
-      const issueId = req.query.issueId as string;
+      const issueId = (req.query.issueId as string) || req.body.issueId;
       const authorId = req.user!.userId;
       const authorName = (req.user as any)?.name || undefined;
       const authorEmail = req.user!.email || undefined;

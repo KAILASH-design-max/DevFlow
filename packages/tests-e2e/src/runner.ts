@@ -85,6 +85,11 @@ export function expect(actual: any) {
         throw new Error(`Expected value to be defined, got undefined`);
       }
     },
+    toBeUndefined() {
+      if (actual !== undefined) {
+        throw new Error(`Expected undefined, got ${JSON.stringify(actual)}`);
+      }
+    },
     toBeNull() {
       if (actual !== null) {
         throw new Error(`Expected null, got ${JSON.stringify(actual)}`);

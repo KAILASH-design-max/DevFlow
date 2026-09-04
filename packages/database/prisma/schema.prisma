@@ -1,13 +1,14 @@
 // DevFlow — Prisma Schema
-// Database: SQLite (dev) → PostgreSQL (production)
+// Target Database: Neon PostgreSQL
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -49,6 +50,11 @@ model User {
   twoFactorEnabled Boolean @default(false)
   twoFactorSecret  String?
   twoFactorRecoveryCodes String?
+
+  // Email Verification State
+  emailVerified    Boolean             @default(false)
+  emailVerifiedAt  DateTime?
+  emailVerifications EmailVerification[]
 
   @@map("users")
 }
@@ -329,11 +335,11 @@ model AuditLog {
   action     String // CREATED, UPDATED, DELETED, STATUS_CHANGED, ASSIGNED, etc.
   entityType String // ISSUE, PROJECT, SPRINT, COMMENT, etc.
   entityId   String
-  userId     String
+  userId     String?
   metadata   String? // JSON string with old/new values
   createdAt  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
   @@index([userId])
@@ -591,3 +597,59 @@ model WebhookEvent {
   @@index([provider, eventId])
   @@map("webhook_events")
 }
+
+// ─────────────────────────────────────────────
+// OTP & Two-Factor Authentication Verifications
+// ─────────────────────────────────────────────
+enum OtpPurpose {
+  SIGNUP
+  LOGIN
+  PASSWORD_RESET
+  EMAIL_CHANGE
+}
+
+model EmailVerification {
+  id          String     @id @default(cuid())
+  challengeId String?    @unique @default(cuid())
+  userId      String?
+  email       String
+  otpHash     String     // HMAC-SHA256 hash of the 6-digit OTP
+  purpose     OtpPurpose
+  payload     String?    // Serialized JSON for pending registration/reset data
+  expiresAt   DateTime
+  attempts    Int        @default(0)
+  verifiedAt  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+  @@index([challengeId])
+  @@index([expiresAt])
+  @@index([purpose])
+  @@map("email_verifications")
+}
+
+// ─────────────────────────────────────────────
+// Security Events (Audit Logging)
+// ─────────────────────────────────────────────
+model SecurityEvent {
+  id          String   @id @default(cuid())
+  userId      String?
+  workspaceId String?
+  eventType   String   // LOGIN_SUCCESS, LOGIN_FAILURE, OTP_REQUEST, OTP_LOCKOUT, SESSION_REVOKED, IDOR_ATTEMPT, WEBHOOK_REJECTED
+  ipAddress   String?
+  userAgent   String?
+  metadata    String?  // JSON stringified metadata
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+

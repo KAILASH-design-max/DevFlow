@@ -104,8 +104,9 @@ export class RealtimeService {
     const message = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
 
     this.clients.forEach((client) => {
-      if (targetProjectId && client.projectId && client.projectId !== targetProjectId) {
-        return; // Filter by project if specified
+      // If event is scoped to a specific project, only broadcast to clients subscribed to that project
+      if (targetProjectId && client.projectId !== targetProjectId) {
+        return;
       }
 
       try {

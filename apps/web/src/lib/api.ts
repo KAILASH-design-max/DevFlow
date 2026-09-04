@@ -4,7 +4,19 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 // ─── Auth ───────────────────────────────────────
 export const authApi = {
-  login: (email: string, password: string) =>
+  requestOtp: (email: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/request-otp`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  verifyOtp: (email: string, otp: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/verify-otp`, {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    }),
+
+  login: (email: string, password?: string) =>
     fetchWithAuth(`${API_BASE}/api/auth/login`, {
       method: "POST",
       body: JSON.stringify({ email, password }),
@@ -70,6 +82,64 @@ export const authApi = {
     fetchWithAuth(`${API_BASE}/api/auth/firebase-sync`, {
       method: "POST",
       body: JSON.stringify(data || {}),
+    }),
+};
+
+// ─── OTP Verification (Login, Signup & Password Reset) ──────────
+export const otpApi = {
+  sendSignupOtp: (data: {
+    email: string;
+    name?: string;
+    password?: string;
+    role?: string;
+    workspaceUrl?: string;
+  }) =>
+    fetchWithAuth(`${API_BASE}/api/auth/otp/send-signup`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  verifySignupOtp: (email: string, code: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/otp/verify-signup`, {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    }),
+
+  sendLoginOtp: (email: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/request-otp`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  verifyLoginOtp: (email: string, code: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/verify-otp`, {
+      method: "POST",
+      body: JSON.stringify({ email, otp: code, code }),
+    }),
+
+  resendOtp: (data: {
+    email: string;
+    purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET";
+    password?: string;
+    name?: string;
+    role?: string;
+    workspaceUrl?: string;
+  }) =>
+    fetchWithAuth(`${API_BASE}/api/auth/otp/resend`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  forgotPassword: (email: string) =>
+    fetchWithAuth(`${API_BASE}/api/auth/otp/forgot-password`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (data: { email: string; code: string; newPassword: string }) =>
+    fetchWithAuth(`${API_BASE}/api/auth/otp/reset-password`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 };
 
@@ -144,12 +214,30 @@ export const workspaceApi = {
     fetchWithAuth(`${API_BASE}/api/workspaces/${id}`, {
       method: "DELETE",
     }),
+
+  getInviteDetails: async (workspaceId: string, token?: string, role?: string) => {
+    const params = new URLSearchParams({ workspaceId });
+    if (token) params.set("token", token);
+    if (role) params.set("role", role);
+    const res = await fetch(`${API_BASE}/api/workspaces/invites/details?${params.toString()}`);
+    return res.json();
+  },
+
+  acceptInvite: (workspaceId: string, token?: string, role?: string) =>
+    fetchWithAuth(`${API_BASE}/api/workspaces/invites/accept`, {
+      method: "POST",
+      body: JSON.stringify({ workspaceId, token, role }),
+    }),
 };
 
 // ─── Projects ───────────────────────────────────
 export const projectApi = {
-  list: (workspaceId: string) =>
-    fetchWithAuth(`${API_BASE}/api/projects?workspaceId=${workspaceId}`),
+  list: (workspaceId?: string) => {
+    const url = workspaceId
+      ? `${API_BASE}/api/projects?workspaceId=${encodeURIComponent(workspaceId)}`
+      : `${API_BASE}/api/projects`;
+    return fetchWithAuth(url);
+  },
 
   get: (id: string) => fetchWithAuth(`${API_BASE}/api/projects/${id}`),
 

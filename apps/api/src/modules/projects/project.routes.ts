@@ -3,6 +3,7 @@ import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { createProjectSchema } from "@devflow/shared";
+import { prisma } from "@devflow/database";
 import { ProjectService } from "./project.service.js";
 import { verifyWorkspaceMembership, verifyProjectAccess } from "../../middleware/authorizationHelpers.js";
 
@@ -16,13 +17,13 @@ projectRouter.post(
   validate(createProjectSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const workspaceId = req.query.workspaceId as string;
+      const workspaceId = (req.query.workspaceId as string) || (req.body.workspaceId as string);
       if (!workspaceId) {
-        throw createError("workspaceId query parameter is required", 400);
+        throw createError("workspaceId parameter is required", 400);
       }
 
-      // SECURITY: Verify user is a member of the workspace
-      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
+      // SECURITY: Verify user has permission to create projects in this workspace
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId, ["ADMIN", "PROJECT_MANAGER"]);
 
       const project = await ProjectService.createProject(
         req.user!.userId,
@@ -42,15 +43,29 @@ projectRouter.get(
   "/",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const workspaceId = req.query.workspaceId as string;
-      if (!workspaceId) {
-        throw createError("workspaceId query parameter is required", 400);
+      const workspaceId = req.query.workspaceId as string | undefined;
+
+      let projects: any[] = [];
+      if (workspaceId) {
+        // SECURITY: Verify user is a member of the workspace
+        await verifyWorkspaceMembership(req.user!.userId, workspaceId);
+        projects = await ProjectService.listProjects(workspaceId);
+      } else {
+        // Find all workspaces where user is a member
+        const userMemberships = await prisma.workspaceMember.findMany({
+          where: { userId: req.user!.userId },
+          select: { workspaceId: true },
+        });
+        const wsIds = userMemberships.map((m: { workspaceId: string }) => m.workspaceId);
+        projects = await prisma.project.findMany({
+          where: { workspaceId: { in: wsIds } },
+          include: {
+            _count: { select: { issues: true, members: true, sprints: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        });
       }
 
-      // SECURITY: Verify user is a member of the workspace
-      await verifyWorkspaceMembership(req.user!.userId, workspaceId);
-
-      const projects = await ProjectService.listProjects(workspaceId);
       res.json({ success: true, data: projects });
     } catch (error) {
       next(error);

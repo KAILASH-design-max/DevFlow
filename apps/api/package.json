@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch --ignore \"**/node_modules/**\" src/server.ts",
     "serve": "tsx src/server.ts",
-    "build": "tsc",
+    "build": "pnpm --filter @devflow/database db:generate && tsc",
     "start": "tsx dist/server.js",
     "typecheck": "tsc --noEmit"
   },

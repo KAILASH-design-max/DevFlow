@@ -403,8 +403,12 @@ export class GitHubService {
     webhookSecret: string
   ): Promise<{ id: number; active: boolean } | null> {
     try {
+      if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repoFullName)) {
+        throw createError("Invalid repository identifier. Expected format: owner/repo", 400);
+      }
+
       const response = await fetch(
-        `https://api.github.com/repos/${repoFullName}/hooks`,
+        `https://api.github.com/repos/${encodeURIComponent(repoFullName.split('/')[0])}/${encodeURIComponent(repoFullName.split('/')[1])}/hooks`,
         {
           method: "POST",
           headers: {

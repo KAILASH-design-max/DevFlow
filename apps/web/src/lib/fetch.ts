@@ -4,23 +4,86 @@
  */
 import { auth } from "./firebase";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+let inMemoryAccessToken: string | null = null;
+
+export function setInMemoryAccessToken(token: string | null) {
+  inMemoryAccessToken = token;
+  if (typeof window !== "undefined") {
+    if (token) {
+      sessionStorage.setItem("accessToken", token);
+      localStorage.setItem("accessToken", token);
+    } else {
+      sessionStorage.removeItem("accessToken");
+      localStorage.removeItem("accessToken");
+    }
+  }
+}
+
+export function getInMemoryAccessToken(): string | null {
+  if (inMemoryAccessToken) return inMemoryAccessToken;
+  if (typeof window !== "undefined") {
+    const stored = sessionStorage.getItem("accessToken") || localStorage.getItem("accessToken");
+    if (stored) {
+      inMemoryAccessToken = stored;
+      return stored;
+    }
+  }
+  return null;
+}
+
 export async function fetchWithAuth<T = any>(
   url: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // Prefer fresh Firebase ID token; fall back to stored JWT
-  let token: string | null = null;
-  try {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      token = await currentUser.getIdToken();
-    }
-  } catch {
-    // Firebase not available
+  // 1. In-memory or session-stored access token
+  let token: string | null = getInMemoryAccessToken();
+
+  // 2. Check localStorage if in-memory is missing
+  if (!token && typeof window !== "undefined") {
+    token = localStorage.getItem("accessToken") || sessionStorage.getItem("accessToken") || null;
+    if (token) setInMemoryAccessToken(token);
   }
 
+  // 3. Prefer fresh Firebase ID token if available
+  if (!token) {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        token = await currentUser.getIdToken();
+        if (token) setInMemoryAccessToken(token);
+      }
+    } catch {
+      // Firebase not available
+    }
+  }
+
+  // 4. Proactive refresh: If token is still missing, try refreshing via stored refreshToken
   if (!token && typeof window !== "undefined") {
-    token = localStorage.getItem("accessToken");
+    const storedRefreshToken = localStorage.getItem("refreshToken");
+    if (storedRefreshToken) {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+          credentials: "include",
+        });
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData.data?.accessToken) {
+            token = refreshData.data.accessToken;
+            setInMemoryAccessToken(token);
+            if (refreshData.data?.refreshToken) {
+              localStorage.setItem("refreshToken", refreshData.data.refreshToken);
+            }
+          }
+        }
+      } catch (refreshErr) {
+        console.warn("Proactive token refresh error:", refreshErr);
+      }
+    }
   }
 
   const headers: Record<string, string> = {
@@ -45,13 +108,14 @@ export async function fetchWithAuth<T = any>(
     });
 
     // If 401, try to refresh the token
-    if (res.status === 401 && token) {
+    if (res.status === 401) {
       // Try getting a fresh Firebase token first
       try {
         const currentUser = auth.currentUser;
         if (currentUser) {
           const freshToken = await currentUser.getIdToken(true);
           headers["Authorization"] = `Bearer ${freshToken}`;
+          setInMemoryAccessToken(freshToken);
           res = await fetch(url, {
             ...options,
             headers,
@@ -59,7 +123,7 @@ export async function fetchWithAuth<T = any>(
           });
           if (res.ok || res.status !== 401) {
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || `Request failed with status ${res.status}`);
+            if (!res.ok) throw new Error(data.message || data.error || `Request failed with status ${res.status}`);
             return data;
           }
         }
@@ -68,39 +132,41 @@ export async function fetchWithAuth<T = any>(
       }
 
       // Fallback: try JWT refresh endpoint
-      const refreshRes = await fetch("/api/auth/refresh", {
-        method: "POST",
-        credentials: "include",
-      });
+      const storedRefreshToken = typeof window !== "undefined" ? localStorage.getItem("refreshToken") : null;
+      if (storedRefreshToken) {
+        const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+          credentials: "include",
+        });
 
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json();
-        if (refreshData.data?.accessToken) {
-          localStorage.setItem("accessToken", refreshData.data.accessToken);
-          headers["Authorization"] = `Bearer ${refreshData.data.accessToken}`;
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData.data?.accessToken) {
+            setInMemoryAccessToken(refreshData.data.accessToken);
+            if (refreshData.data?.refreshToken && typeof window !== "undefined") {
+              localStorage.setItem("refreshToken", refreshData.data.refreshToken);
+            }
+            headers["Authorization"] = `Bearer ${refreshData.data.accessToken}`;
 
-          // Retry original request
-          res = await fetch(url, {
-            ...options,
-            headers,
-            credentials: "include",
-          });
+            // Retry original request
+            res = await fetch(url, {
+              ...options,
+              headers,
+              credentials: "include",
+            });
+          }
+        } else {
+          setInMemoryAccessToken(null);
         }
-      } else {
-        // Refresh failed — logout
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("user");
-        if (typeof window !== "undefined" && window.location.pathname !== "/") {
-          window.location.href = "/";
-        }
-        throw new Error("Session expired. Please sign in again.");
       }
     }
 
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      throw new Error(data.error || `Request failed with status ${res.status}`);
+      throw new Error(data.message || data.error || `Request failed with status ${res.status}`);
     }
 
     return data;

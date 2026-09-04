@@ -33,13 +33,13 @@ export class IssueService {
       aiAnalysis,
     } = data;
 
-    // Resolve project (support ID, key "SS", or fallback)
+    // Resolve project (support ID or key)
     let finalProjectId = projectId;
     const projectExists = await prisma.project.findUnique({ where: { id: projectId } });
     if (!projectExists) {
       const projByKey = await prisma.project.findFirst({
-        where: { OR: [{ key: projectId }, { key: "SS" }, { name: "SpeedyShop" }] }
-      }) || await prisma.project.findFirst();
+        where: { key: projectId }
+      });
       if (projByKey) {
         finalProjectId = projByKey.id;
       }
@@ -171,8 +171,8 @@ export class IssueService {
     const projectExists = await prisma.project.findUnique({ where: { id: projectId } });
     if (!projectExists) {
       const projByKey = await prisma.project.findFirst({
-        where: { OR: [{ key: projectId }, { key: "SS" }, { name: "SpeedyShop" }] }
-      }) || await prisma.project.findFirst();
+        where: { key: projectId }
+      });
       if (projByKey) {
         finalProjectId = projByKey.id;
       }
@@ -284,6 +284,28 @@ export class IssueService {
       include: includeConfig,
     });
 
+    if (!issue && issueId.includes("-")) {
+      const lastDashIdx = issueId.lastIndexOf("-");
+      const projectKey = issueId.substring(0, lastDashIdx);
+      const numStr = issueId.substring(lastDashIdx + 1);
+      const num = parseInt(numStr, 10);
+      if (projectKey && !isNaN(num)) {
+        const project = await prisma.project.findFirst({
+          where: { key: { equals: projectKey, mode: "insensitive" } },
+          select: { id: true },
+        });
+        if (project) {
+          issue = await prisma.issue.findFirst({
+            where: {
+              projectId: project.id,
+              number: num,
+            },
+            include: includeConfig,
+          });
+        }
+      }
+    }
+
     if (!issue) {
       const numMatch = issueId.match(/\d+/);
       if (numMatch) {
@@ -299,6 +321,48 @@ export class IssueService {
       throw createError("Issue not found", 404);
     }
 
+    return {
+      ...issue,
+      key: `${issue.project.key}-${issue.number}`,
+    };
+  }
+
+  static async resolveIssueEntity(issueId: string) {
+    let issue = await prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue && issueId.includes("-")) {
+      const lastDashIdx = issueId.lastIndexOf("-");
+      const projectKey = issueId.substring(0, lastDashIdx);
+      const numStr = issueId.substring(lastDashIdx + 1);
+      const num = parseInt(numStr, 10);
+      if (projectKey && !isNaN(num)) {
+        const project = await prisma.project.findFirst({
+          where: { key: { equals: projectKey, mode: "insensitive" } },
+          select: { id: true },
+        });
+        if (project) {
+          issue = await prisma.issue.findFirst({
+            where: {
+              projectId: project.id,
+              number: num,
+            },
+          });
+        }
+      }
+    }
+
+    if (!issue) {
+      const numMatch = issueId.match(/\d+/);
+      if (numMatch) {
+        const num = parseInt(numMatch[0], 10);
+        issue = await prisma.issue.findFirst({
+          where: { number: num },
+        });
+      }
+    }
+
     return issue;
   }
 
@@ -306,13 +370,13 @@ export class IssueService {
    * Update issue fields, labels, and track audit logs
    */
   static async updateIssue(userId: string, issueId: string, updateData: any) {
-    const oldIssue = await prisma.issue.findUnique({
-      where: { id: issueId },
-    });
+    const oldIssue = await this.resolveIssueEntity(issueId);
 
     if (!oldIssue) {
       throw createError("Issue not found", 404);
     }
+
+    const actualId = oldIssue.id;
 
     // IDOR Protection: Verify user is a member of the project
     const membership = await prisma.projectMember.findUnique({
@@ -331,7 +395,7 @@ export class IssueService {
     const { labelIds, ...issueData } = updateData;
 
     const issue = await prisma.issue.update({
-      where: { id: issueId },
+      where: { id: actualId },
       data: {
         ...issueData,
         ...(issueData.dueDate && {
@@ -350,10 +414,10 @@ export class IssueService {
     });
 
     if (labelIds) {
-      await prisma.issueLabel.deleteMany({ where: { issueId } });
+      await prisma.issueLabel.deleteMany({ where: { issueId: actualId } });
       await prisma.issueLabel.createMany({
         data: labelIds.map((labelId: string) => ({
-          issueId,
+          issueId: actualId,
           labelId,
         })),
       });
@@ -364,7 +428,7 @@ export class IssueService {
         data: {
           action: "STATUS_CHANGED",
           entityType: "ISSUE",
-          entityId: issueId,
+          entityId: actualId,
           userId,
           metadata: JSON.stringify({
             from: oldIssue.status,
@@ -374,7 +438,7 @@ export class IssueService {
       });
 
       eventBus.emitEvent("issue.status_changed", {
-        issueId,
+        issueId: actualId,
         projectId: oldIssue.projectId,
         userId,
         oldStatus: oldIssue.status,
@@ -389,13 +453,15 @@ export class IssueService {
    * Move issue position and column status on Kanban board
    */
   static async moveIssue(userId: string, issueId: string, status: string, position: number) {
-    const oldIssue = await prisma.issue.findUnique({ where: { id: issueId } });
+    const oldIssue = await this.resolveIssueEntity(issueId);
     if (!oldIssue) {
       throw createError("Issue not found", 404);
     }
 
+    const actualId = oldIssue.id;
+
     const issue = await prisma.issue.update({
-      where: { id: issueId },
+      where: { id: actualId },
       data: { status, position },
       include: {
         assignee: {
@@ -411,14 +477,14 @@ export class IssueService {
       data: {
         action: "STATUS_CHANGED",
         entityType: "ISSUE",
-        entityId: issueId,
+        entityId: actualId,
         userId,
         metadata: JSON.stringify({ newStatus: status, newPosition: position }),
       },
     });
 
     eventBus.emitEvent("issue.status_changed", {
-      issueId,
+      issueId: actualId,
       projectId: oldIssue.projectId,
       userId,
       oldStatus: oldIssue.status,
@@ -432,7 +498,7 @@ export class IssueService {
    * Delete issue
    */
   static async deleteIssue(userId: string, issueId: string) {
-    const existing = await prisma.issue.findUnique({ where: { id: issueId } });
+    const existing = await this.resolveIssueEntity(issueId);
     if (!existing) {
       throw createError("Issue not found", 404);
     }
@@ -451,31 +517,34 @@ export class IssueService {
       throw createError("Unauthorized: You do not have access to this project", 403);
     }
 
-    await prisma.issue.delete({ where: { id: issueId } });
+    await prisma.issue.delete({ where: { id: existing.id } });
   }
 
   /**
    * Get unified activity timeline (Audit logs, comments, work logs, commits)
    */
   static async getActivities(issueId: string) {
+    const existing = await this.resolveIssueEntity(issueId);
+    const actualId = existing?.id || issueId;
+
     const [auditLogs, comments, workLogs, commits] = await Promise.all([
       prisma.auditLog.findMany({
-        where: { entityType: "ISSUE", entityId: issueId },
+        where: { entityType: "ISSUE", entityId: actualId },
         include: { user: { select: { id: true, name: true, avatar: true } } },
         orderBy: { createdAt: "desc" },
       }),
       prisma.comment.findMany({
-        where: { issueId },
+        where: { issueId: actualId },
         include: { author: { select: { id: true, name: true, avatar: true } } },
         orderBy: { createdAt: "desc" },
       }),
       prisma.workLog.findMany({
-        where: { issueId },
+        where: { issueId: actualId },
         include: { user: { select: { id: true, name: true, avatar: true } } },
         orderBy: { createdAt: "desc" },
       }),
       prisma.gitCommit.findMany({
-        where: { issueId },
+        where: { issueId: actualId },
         orderBy: { createdAt: "desc" },
       }),
     ]);

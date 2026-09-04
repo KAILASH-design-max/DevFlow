@@ -4,11 +4,59 @@ import { validate } from "../../middleware/validate.js";
 import { createWorkspaceSchema } from "@devflow/shared";
 import { WorkspaceService } from "./workspace.service.js";
 import { verifyWorkspaceMembership } from "../../middleware/authorizationHelpers.js";
+import { createError } from "../../middleware/errorHandler.js";
 
 export const workspaceRouter = Router();
 
-// All workspace routes require authentication
+// ─── Public: Fetch Invitation Details ─────────────
+workspaceRouter.get(
+  "/invites/details",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, token, role } = req.query;
+      if (!workspaceId) {
+        return res.status(400).json({ success: false, message: "Workspace identifier is required" });
+      }
+
+      const details = await WorkspaceService.getInviteDetails(
+        workspaceId as string,
+        token as string | undefined,
+        role as string | undefined
+      );
+
+      res.json({ success: true, data: details });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// All subsequent workspace routes require authentication
 workspaceRouter.use(authenticate);
+
+// ─── Authenticated: Accept Workspace Invitation ───
+workspaceRouter.post(
+  "/invites/accept",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { workspaceId, token, role } = req.body;
+      if (!workspaceId) {
+        return res.status(400).json({ success: false, message: "Workspace identifier is required" });
+      }
+
+      const result = await WorkspaceService.acceptInvite(
+        req.user!.userId,
+        workspaceId,
+        token,
+        role
+      );
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // ─── Create Workspace ───────────────────────────
 workspaceRouter.post(
@@ -88,9 +136,13 @@ workspaceRouter.post(
       await verifyWorkspaceMembership(req.user!.userId, req.params.workspaceId as string, ["ADMIN", "OWNER"]);
 
       const { email, role } = req.body;
+      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        throw createError("Please enter a valid email address", 400);
+      }
+
       const member = await WorkspaceService.inviteMember(
         req.params.workspaceId as string,
-        email,
+        email.trim(),
         role,
         req.user!.userId
       );

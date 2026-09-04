@@ -18,10 +18,29 @@ export class AttachmentService {
       size: number;
     }
   ) {
-    const issue = await prisma.issue.findUnique({
+    let issue = await prisma.issue.findUnique({
       where: { id: issueId },
       include: { project: true },
     });
+
+    if (!issue && issueId.includes("-")) {
+      const lastDashIdx = issueId.lastIndexOf("-");
+      const projectKey = issueId.substring(0, lastDashIdx);
+      const numStr = issueId.substring(lastDashIdx + 1);
+      const num = parseInt(numStr, 10);
+      if (projectKey && !isNaN(num)) {
+        const project = await prisma.project.findFirst({
+          where: { key: { equals: projectKey, mode: "insensitive" } },
+          select: { id: true },
+        });
+        if (project) {
+          issue = await prisma.issue.findFirst({
+            where: { projectId: project.id, number: num },
+            include: { project: true },
+          });
+        }
+      }
+    }
 
     if (!issue) {
       throw createError("Issue not found", 404);
@@ -137,11 +156,38 @@ export class AttachmentService {
   static async deleteAttachment(userId: string, attachmentId: string) {
     const attachment = await prisma.attachment.findUnique({
       where: { id: attachmentId },
-      include: { issue: true },
+      include: {
+        issue: {
+          include: {
+            project: {
+              include: {
+                workspace: {
+                  include: {
+                    members: {
+                      where: { userId },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!attachment) {
       throw createError("Attachment not found", 404);
+    }
+
+    const member = attachment.issue.project.workspace.members[0];
+    const isUploader = attachment.uploaderId === userId;
+    const isAdmin = member?.role === "ADMIN" || member?.role === "OWNER";
+
+    if (!isUploader && !isAdmin) {
+      throw createError(
+        "Not authorized to delete this attachment. Only the uploader or a workspace Admin can delete attachments.",
+        403
+      );
     }
 
     // Delete physical file

@@ -23,7 +23,9 @@ import { realtimeRouter } from "./modules/realtime/realtime.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes.js";
 import path from "path";
+import crypto from "crypto";
 import { StorageService } from "./services/storage.service.js";
+import { prisma } from "@devflow/database";
 
 const app = express();
 
@@ -70,12 +72,16 @@ app.use(
 );
 
 // ─────────────────────────────────────────────
-// CORS (Strict)
+// CORS (Strict, supporting comma-separated multi-domain lists)
 // ─────────────────────────────────────────────
+
+const parsedCorsOrigins = config.corsOrigin
+  ? config.corsOrigin.split(",").map((o) => o.trim()).filter(Boolean)
+  : ["http://localhost:3000"];
 
 app.use(
   cors({
-    origin: config.corsOrigin,
+    origin: parsedCorsOrigins.length === 1 ? parsedCorsOrigins[0] : parsedCorsOrigins,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
@@ -88,8 +94,9 @@ app.use(
 // Body Parsing & Cookies
 // ─────────────────────────────────────────────
 
-// Raw body for GitHub webhook HMAC verification (must come BEFORE json parser)
+// Raw body for GitHub & Stripe payment webhook HMAC verification (must come BEFORE json parser)
 app.use("/api/github/webhook", express.raw({ type: "application/json" }));
+app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
@@ -104,8 +111,6 @@ app.use((req, _res, next) => {
     req.headers["x-request-id"] || crypto.randomUUID();
   next();
 });
-
-import crypto from "crypto";
 
 // Only use verbose logging in development
 if (config.nodeEnv === "development") {
@@ -157,10 +162,18 @@ const authLimiter = rateLimit({
 // Health Check (excluded from rate limiting)
 // ─────────────────────────────────────────────
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  let dbStatus = "connected";
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (e) {
+    dbStatus = "disconnected";
+  }
+
   res.json({
     success: true,
     message: "DevFlow API is running",
+    database: dbStatus,
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     uptime: Math.floor(process.uptime()),
@@ -208,8 +221,15 @@ app.use(
   "/uploads",
   express.static(path.resolve(process.cwd(), config.uploadDir), {
     maxAge: "7d",
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      // Prevent inline script execution for uploaded SVGs or HTML files
+      const lower = filePath.toLowerCase();
+      if (lower.endsWith(".svg") || lower.endsWith(".html") || lower.endsWith(".htm")) {
+        res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+        res.setHeader("Content-Disposition", "attachment");
+      }
     },
   })
 );
@@ -232,10 +252,10 @@ app.use("/api/*", (_req, res) => {
 app.use(errorHandler);
 
 // ─────────────────────────────────────────────
-// Start Server
+// Start Server & Lifecycle
 // ─────────────────────────────────────────────
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`
   ╔═══════════════════════════════════════════╗
   ║     🚀 DevFlow API Server Running        ║
@@ -246,5 +266,21 @@ app.listen(config.port, () => {
   ╚═══════════════════════════════════════════╝
   `);
 });
+
+const gracefulShutdown = (signal: string) => {
+  console.log(`\nReceived ${signal}. Gracefully shutting down DevFlow API...`);
+  server.close(async () => {
+    try {
+      await prisma.$disconnect();
+      console.log("Prisma client disconnected successfully.");
+    } catch (err) {
+      // Suppress connection details in logs
+    }
+    process.exit(0);
+  });
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 export default app;

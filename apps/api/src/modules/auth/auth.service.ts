@@ -6,6 +6,7 @@ import { prisma } from "@devflow/database";
 import { config } from "../../config/index.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { generateBase32Secret, verifyTotpCode } from "../../utils/totp.js";
+import { LocalQrCode } from "../../utils/qr.js";
 
 export class AuthService {
   /**
@@ -24,8 +25,8 @@ export class AuthService {
     });
 
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword, name },
-      select: { id: true, email: true, name: true, avatar: true },
+      data: { email, password: hashedPassword, name, emailVerified: true, emailVerifiedAt: new Date() },
+      select: { id: true, email: true, name: true, avatar: true, emailVerified: true },
     });
 
     const tokens = this.generateTokens(user.id, user.email);
@@ -68,6 +69,15 @@ export class AuthService {
     const validPassword = await argon2.verify(user.password, password);
     if (!validPassword) {
       throw createError("Invalid email or password", 401);
+    }
+
+    // Auto-verify legacy accounts created before email verification upon successful login
+    if (!user.emailVerified) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerified: true, emailVerifiedAt: new Date() },
+      });
+      user.emailVerified = true;
     }
 
     // Enforce 2FA if enabled on user account
@@ -139,6 +149,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         avatar: user.avatar,
+        emailVerified: user.emailVerified,
       },
       tokens,
     };
@@ -220,6 +231,8 @@ export class AuthService {
         email: true,
         name: true,
         avatar: true,
+        emailVerified: true,
+        emailVerifiedAt: true,
         createdAt: true,
         bio: true,
         title: true,
@@ -314,8 +327,10 @@ export class AuthService {
         password: "firebase-auth-managed", // Placeholder — password managed by Firebase
         name: derivedName,
         avatar: data?.avatar || null,
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
       },
-      select: { id: true, email: true, name: true, avatar: true },
+      select: { id: true, email: true, name: true, avatar: true, emailVerified: true },
     });
 
     // Auto-create a default workspace for new users
@@ -448,7 +463,7 @@ export class AuthService {
     // Standard RFC 6238 Base32 Secret
     const secret = generateBase32Secret(32);
     const otpauthUrl = `otpauth://totp/DevFlow:${encodeURIComponent(user.email)}?secret=${secret}&issuer=DevFlow`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`;
+    const qrCodeUrl = LocalQrCode.toDataUrl(otpauthUrl, 200);
 
     const recoveryCodes = Array.from({ length: 8 }, () => {
       const bytes = crypto.randomBytes(4).toString("hex").toUpperCase();

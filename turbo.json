@@ -10,6 +10,9 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "dist/**"]
     },
+    "@devflow/database#build": {
+      "cache": false
+    },
     "typecheck": {
       "cache": false
     },

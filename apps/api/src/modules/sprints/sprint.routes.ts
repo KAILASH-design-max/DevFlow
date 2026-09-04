@@ -16,7 +16,7 @@ sprintRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const projectId = req.query.projectId as string;
-      await verifyProjectAccess(req.user!.userId, projectId);
+      await verifyProjectAccess(req.user!.userId, projectId, ["ADMIN", "PROJECT_MANAGER"]);
       const sprint = await SprintService.createSprint(projectId, req.body);
       res.status(201).json({ success: true, data: sprint });
     } catch (error) {
@@ -62,7 +62,7 @@ sprintRouter.patch(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sprintId = req.params.sprintId as string;
-      await verifySprintAccess(req.user!.userId, sprintId);
+      await verifySprintAccess(req.user!.userId, sprintId, ["ADMIN", "PROJECT_MANAGER"]);
       const sprint = await SprintService.updateSprint(
         req.user!.userId,
         sprintId,
@@ -81,7 +81,7 @@ sprintRouter.delete(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sprintId = req.params.sprintId as string;
-      await verifySprintAccess(req.user!.userId, sprintId);
+      await verifySprintAccess(req.user!.userId, sprintId, ["ADMIN", "PROJECT_MANAGER"]);
       await SprintService.deleteSprint(sprintId);
       res.json({ success: true, message: "Sprint deleted" });
     } catch (error) {

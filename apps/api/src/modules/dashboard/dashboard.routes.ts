@@ -72,13 +72,24 @@ dashboardRouter.get(
       }
       await verifyWorkspaceMembership(req.user!.userId, workspaceId);
 
+      // Resolve all projects, issues, and sprints within this workspace to strictly scope logs
+      const projects = await prisma.project.findMany({
+        where: { workspaceId },
+        select: {
+          id: true,
+          issues: { select: { id: true } },
+          sprints: { select: { id: true } },
+        },
+      });
+
+      const projectIds = projects.map((p) => p.id);
+      const issueIds = projects.flatMap((p) => p.issues.map((i) => i.id));
+      const sprintIds = projects.flatMap((p) => p.sprints.map((s) => s.id));
+      const entityIds = [workspaceId, ...projectIds, ...issueIds, ...sprintIds];
+
       const activity = await prisma.auditLog.findMany({
         where: {
-          user: {
-            workspaceMembers: {
-              some: { workspaceId },
-            },
-          },
+          entityId: { in: entityIds },
         },
         include: {
           user: {

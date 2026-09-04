@@ -12,52 +12,51 @@ export class CommentService {
       throw createError("issueId is required", 400);
     }
 
-    // Check if issue exists in SQLite
+    // Check if issue exists in database (by ID or scoped ProjectKey-Number e.g. DF-101)
     let issue = await prisma.issue.findUnique({ where: { id: issueId } });
     if (!issue) {
-      const numMatch = issueId.match(/\d+/);
-      if (numMatch) {
-        issue = await prisma.issue.findFirst({ where: { number: parseInt(numMatch[0], 10) } });
+      const parts = issueId.split("-");
+      if (parts.length >= 2 && !isNaN(Number(parts[parts.length - 1]))) {
+        const projectKey = parts.slice(0, parts.length - 1).join("-").toUpperCase();
+        const number = parseInt(parts[parts.length - 1], 10);
+        issue = await prisma.issue.findFirst({
+          where: {
+            number,
+            project: { key: projectKey },
+          },
+        });
       }
     }
 
-    if (issue) {
-      const comment = await prisma.comment.create({
-        data: {
-          content,
-          issueId: issue.id,
-          authorId,
-        },
-        include: {
-          author: {
-            select: { id: true, name: true, avatar: true },
-          },
-        },
-      });
-
-      // Create audit log
-      await prisma.auditLog.create({
-        data: {
-          action: "COMMENTED",
-          entityType: "ISSUE",
-          entityId: issue.id,
-          userId: authorId,
-          metadata: JSON.stringify({ commentId: comment.id }),
-        },
-      }).catch(() => {});
-
-      return comment;
-    } else {
-      // Handled via Firestore database fallback (Legacy)
-      return {
-        id: `cmt_${Date.now()}`,
-        content,
-        issueId,
-        authorId,
-        author: { id: authorId, name: authorName || (authorEmail ? authorEmail.split("@")[0] : "Alice Chen"), avatar: null },
-        createdAt: new Date().toISOString(),
-      };
+    if (!issue) {
+      throw createError("Issue not found", 404);
     }
+
+    const comment = await prisma.comment.create({
+      data: {
+        content,
+        issueId: issue.id,
+        authorId,
+      },
+      include: {
+        author: {
+          select: { id: true, name: true, avatar: true },
+        },
+      },
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        action: "COMMENTED",
+        entityType: "ISSUE",
+        entityId: issue.id,
+        userId: authorId,
+        metadata: JSON.stringify({ commentId: comment.id }),
+      },
+    }).catch(() => {});
+
+    return comment;
   }
 
   /**
@@ -71,9 +70,16 @@ export class CommentService {
     let targetIssueId = issueId;
     const issue = await prisma.issue.findUnique({ where: { id: issueId } });
     if (!issue) {
-      const numMatch = issueId.match(/\d+/);
-      if (numMatch) {
-        const matched = await prisma.issue.findFirst({ where: { number: parseInt(numMatch[0], 10) } });
+      const parts = issueId.split("-");
+      if (parts.length >= 2 && !isNaN(Number(parts[parts.length - 1]))) {
+        const projectKey = parts.slice(0, parts.length - 1).join("-").toUpperCase();
+        const number = parseInt(parts[parts.length - 1], 10);
+        const matched = await prisma.issue.findFirst({
+          where: {
+            number,
+            project: { key: projectKey },
+          },
+        });
         if (matched) targetIssueId = matched.id;
       }
     }

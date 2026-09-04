@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useUiStore } from "@/lib/store";
 import { aiApi, issueApi, projectApi, sprintApi, workspaceApi } from "@/lib/api";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const DEFAULT_MEMBERS = [
   { id: "usr_alice", name: "Alice Chen", role: "Lead Architect" },
@@ -47,6 +48,7 @@ const AVAILABLE_LABELS = [
 
 export default function CreateIssueModal() {
   const { isCreateIssueOpen, defaultStatus, closeCreateIssue } = useUiStore();
+  const { canCreateIssue, role: activeRole } = usePermissions();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -81,11 +83,18 @@ export default function CreateIssueModal() {
 
     const loadContext = async () => {
       try {
-        let currentWorkspaceId = "";
+        let currentWorkspaceId = typeof window !== "undefined" ? localStorage.getItem("currentWorkspaceId") || "" : "";
         const wsRes = await workspaceApi.list().catch(() => null);
         if (wsRes?.success && wsRes.data?.length > 0) {
-          const ws = wsRes.data[0];
+          let ws = wsRes.data.find((w: any) => w.id === currentWorkspaceId);
+          if (!ws) {
+            const withProjects = wsRes.data.find((w: any) => (w._count?.projects || 0) > 0);
+            ws = withProjects || wsRes.data[0];
+          }
           currentWorkspaceId = ws.id;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("currentWorkspaceId", currentWorkspaceId);
+          }
           if (ws.members && ws.members.length > 0) {
             setMembers(
               ws.members.map((m: any) => ({
@@ -381,6 +390,17 @@ export default function CreateIssueModal() {
           </div>
         </div>
 
+        {/* Role Restriction Banner */}
+        {!canCreateIssue && (
+          <div className="mx-6 mt-4 p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-xs text-amber-800">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold">Read-Only Mode: </span>
+              <span>Your current role ({activeRole}) has read-only privileges and cannot create tickets.</span>
+            </div>
+          </div>
+        )}
+
         {/* Modal Form Content */}
         <form onSubmit={handleSubmit} className="overflow-y-auto p-6 space-y-5 flex-1">
           {/* Target Project & Sprint Selector */}
@@ -658,7 +678,8 @@ export default function CreateIssueModal() {
 
           <button
             onClick={handleSubmit}
-            disabled={!title.trim() || isSubmitting}
+            disabled={!title.trim() || isSubmitting || !canCreateIssue}
+            title={!canCreateIssue ? `Role ${activeRole} cannot create issues` : undefined}
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
           >
             {isSuccess ? (
@@ -671,6 +692,8 @@ export default function CreateIssueModal() {
                 <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 <span>Creating Ticket...</span>
               </>
+            ) : !canCreateIssue ? (
+              <span>Create Restricted (Read-Only)</span>
             ) : (
               <>
                 <span>Create Issue</span>
