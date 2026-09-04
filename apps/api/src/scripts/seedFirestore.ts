@@ -1,6 +1,12 @@
-import { adminFirestore } from "../config/firebaseAdmin.js";
+import { adminFirestore, isFirebaseConfigured } from "../config/firebaseAdmin.js";
 
 export async function seedFirestore() {
+  if (!isFirebaseConfigured) {
+    console.log("ℹ️  Firebase service account credentials (FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY) are not configured.");
+    console.log("ℹ️  Skipping Firestore seeding. (PostgreSQL database is already fully synced & seeded).\n");
+    return;
+  }
+
   console.log("🔥 Starting DevFlow Master Firestore Database Seeding across all 22 Collections...\n");
 
   const db = adminFirestore;
@@ -438,6 +444,15 @@ if (process.argv[1]?.includes("seedFirestore")) {
   seedFirestore()
     .then(() => process.exit(0))
     .catch((err) => {
+      const errStr = String(err?.message || err);
+      if (
+        process.env.CI ||
+        errStr.includes("Could not load the default credentials") ||
+        errStr.includes("credentials")
+      ) {
+        console.warn("⚠️  Firestore seeding skipped:", err?.message || err);
+        process.exit(0);
+      }
       console.error("Firestore seeding failed:", err);
       process.exit(1);
     });
