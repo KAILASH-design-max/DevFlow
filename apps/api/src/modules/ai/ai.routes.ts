@@ -1,16 +1,19 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
-import { analyzeIssueSchema } from "@devflow/shared";
+import { analyzeIssueSchema, summarizePrSchema } from "@devflow/shared";
 import { AIService } from "./ai.service.js";
 import {
   verifyProjectAccess,
   verifySprintAccess,
+  verifyIssueAccess,
 } from "../../middleware/authorizationHelpers.js";
+import { aiLimiter } from "../../middleware/rateLimiter.js";
 
 export const aiRouter = Router();
 
 aiRouter.use(authenticate);
+aiRouter.use(aiLimiter);
 
 // ─── Analyze Issue (AI Breakdown) ───────────────
 aiRouter.post(
@@ -65,9 +68,16 @@ aiRouter.post(
 // ─── Summarize PR ───────────────────────────────
 aiRouter.post(
   "/summarize-pr",
+  validate(summarizePrSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { title, headBranch, baseBranch, issueKey } = req.body;
+
+      // SECURITY: If issueKey is provided, verify caller has access to the linked issue
+      if (issueKey) {
+        await verifyIssueAccess(req.user!.userId, issueKey);
+      }
+
       const summary = await AIService.summarizePR({
         title,
         headBranch,

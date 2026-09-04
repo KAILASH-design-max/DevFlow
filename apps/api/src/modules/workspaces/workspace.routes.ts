@@ -1,7 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
-import { createWorkspaceSchema } from "@devflow/shared";
+import {
+  createWorkspaceSchema,
+  updateWorkspaceSchema,
+  inviteMemberSchema,
+  updateMemberRoleSchema,
+} from "@devflow/shared";
 import { WorkspaceService } from "./workspace.service.js";
 import { verifyWorkspaceMembership } from "../../middleware/authorizationHelpers.js";
 import { createError } from "../../middleware/errorHandler.js";
@@ -111,6 +116,7 @@ workspaceRouter.get(
 // ─── Update Workspace ────────────────────────────
 workspaceRouter.patch(
   "/:workspaceId",
+  validate(updateWorkspaceSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // SECURITY: Only ADMINs can update workspace settings
@@ -130,16 +136,13 @@ workspaceRouter.patch(
 // ─── Invite Member ──────────────────────────────
 workspaceRouter.post(
   "/:workspaceId/invite",
+  validate(inviteMemberSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // SECURITY: Only ADMINs can invite members
       await verifyWorkspaceMembership(req.user!.userId, req.params.workspaceId as string, ["ADMIN", "OWNER"]);
 
       const { email, role } = req.body;
-      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-        throw createError("Please enter a valid email address", 400);
-      }
-
       const member = await WorkspaceService.inviteMember(
         req.params.workspaceId as string,
         email.trim(),
@@ -156,6 +159,7 @@ workspaceRouter.post(
 // ─── Update Member Role ─────────────────────────
 workspaceRouter.patch(
   "/:workspaceId/members/:memberId",
+  validate(updateMemberRoleSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // SECURITY: Only ADMINs can change member roles

@@ -2,10 +2,15 @@ import { Router, Request, Response, NextFunction } from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { createError } from "../../middleware/errorHandler.js";
-import { verifyPatSchema, linkRepoSchema } from "@devflow/shared";
+import { verifyPatSchema, linkRepoSchema, createPullRequestSchema } from "@devflow/shared";
 import { GitHubService } from "./github.service.js";
 import { WebhookService } from "./webhook.service.js";
 import { config } from "../../config/index.js";
+import {
+  verifyProjectAccess,
+  verifyIssueAccess,
+} from "../../middleware/authorizationHelpers.js";
+import { githubSyncLimiter } from "../../middleware/rateLimiter.js";
 import type { WebhookPullRequestPayload } from "@devflow/shared";
 
 export const githubRouter = Router();
@@ -117,10 +122,6 @@ githubRouter.get(
               <p>Completing authorization... You can close this window if it doesn't close automatically.</p>
             </div>
             <script>
-              try {
-                sessionStorage.setItem('devflow_pending_gh_token', ${JSON.stringify(token)});
-              } catch (e) {}
-
               if (window.opener) {
                 window.opener.postMessage(
                   { 
@@ -184,6 +185,7 @@ githubRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { projectId } = req.params;
+      await verifyProjectAccess(req.user!.userId, projectId as string, ["OWNER", "ADMIN"]);
       const repository = await GitHubService.linkRepository(projectId as string, req.body);
       res.status(201).json({ success: true, data: repository });
     } catch (error) {
@@ -198,6 +200,7 @@ githubRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { projectId } = req.params;
+      await verifyProjectAccess(req.user!.userId, projectId as string);
       const repository = await GitHubService.getConnectedRepository(projectId as string);
       res.json({ success: true, data: repository });
     } catch (error) {
@@ -212,6 +215,7 @@ githubRouter.delete(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { projectId } = req.params;
+      await verifyProjectAccess(req.user!.userId, projectId as string, ["OWNER", "ADMIN"]);
       const result = await GitHubService.unlinkRepository(projectId as string);
       res.json(result);
     } catch (error) {
@@ -223,9 +227,11 @@ githubRouter.delete(
 // ─── Sync Pull Requests for Project ───────────────────────────
 githubRouter.post(
   "/projects/:projectId/sync-prs",
+  githubSyncLimiter,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { projectId } = req.params;
+      await verifyProjectAccess(req.user!.userId, projectId as string);
       const prs = await GitHubService.syncPullRequests(projectId as string);
       res.json({ success: true, data: prs });
     } catch (error) {
@@ -240,6 +246,7 @@ githubRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { issueId } = req.params;
+      await verifyIssueAccess(req.user!.userId, issueId as string);
       const branchInfo = await GitHubService.getBranchHelper(issueId as string);
       res.json({ success: true, data: branchInfo });
     } catch (error) {
@@ -251,10 +258,13 @@ githubRouter.get(
 // ─── Create Pull Request (CLI / Web) ──────────────────────────
 githubRouter.post(
   "/pull-requests",
+  validate(createPullRequestSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { projectId, title, headBranch, baseBranch, body, issueKey } = req.body;
       const { prisma } = await import("@devflow/database");
+
+      await verifyProjectAccess(req.user!.userId, projectId as string);
 
       // Ensure repository exists for project or create virtual repo
       let repo = await prisma.repository.findUnique({ where: { projectId } });
@@ -342,7 +352,7 @@ githubRouter.get(
             select: { id: true, number: true, title: true, status: true },
           },
           repository: {
-            select: { name: true, fullName: true, url: true },
+            select: { name: true, fullName: true, url: true, projectId: true },
           },
         },
       });
@@ -350,6 +360,9 @@ githubRouter.get(
       if (!pr) {
         throw createError("Pull Request not found", 404);
       }
+
+      // SECURITY: Verify caller has access to the project owning this repository
+      await verifyProjectAccess(req.user!.userId, pr.repository.projectId);
 
       res.json({
         success: true,
@@ -364,4 +377,5 @@ githubRouter.get(
     }
   }
 );
+
 

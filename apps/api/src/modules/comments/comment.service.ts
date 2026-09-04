@@ -100,17 +100,37 @@ export class CommentService {
   /**
    * Delete Comment
    */
-  static async deleteComment(commentId: string, authorId: string) {
+  static async deleteComment(commentId: string, userId: string) {
     const comment = await prisma.comment.findUnique({
       where: { id: commentId },
+      include: {
+        issue: {
+          include: {
+            project: {
+              select: { workspaceId: true },
+            },
+          },
+        },
+      },
     });
 
     if (!comment) {
       throw createError("Comment not found", 404);
     }
 
-    if (comment.authorId !== authorId) {
-      throw createError("Not authorized to delete this comment", 403);
+    if (comment.authorId !== userId) {
+      const member = await prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId,
+            workspaceId: comment.issue.project.workspaceId,
+          },
+        },
+      });
+
+      if (!member || (member.role !== "ADMIN" && member.role !== "OWNER")) {
+        throw createError("Not authorized to delete this comment", 403);
+      }
     }
 
     await prisma.comment.delete({

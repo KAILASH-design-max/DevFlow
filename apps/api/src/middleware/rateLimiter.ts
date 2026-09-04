@@ -79,3 +79,52 @@ export const passwordResetLimiter = rateLimit({
     return (req.ip || "reset-ip") as string;
   },
 });
+
+// 5. AI Endpoint Limiter: Max 20 requests per 15 minutes per user/IP
+export const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skip: isLocalDevOrTest,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "AI rate limit reached. Please wait before requesting additional AI analyses.",
+  },
+  keyGenerator: (req: Request) => {
+    return ((req as any).user?.userId || req.ip || "ai-user") as string;
+  },
+});
+
+// 6. File Upload Limiter: Max 30 uploads per 15 minutes
+export const fileUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skip: isLocalDevOrTest,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "File upload rate limit reached. Please wait before uploading more files.",
+  },
+  keyGenerator: (req: Request) => {
+    return ((req as any).user?.userId || req.ip || "upload-user") as string;
+  },
+});
+
+// 7. GitHub Sync Limiter: Max 15 synchronization requests per 15 minutes
+export const githubSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  skip: isLocalDevOrTest,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "GitHub synchronization rate limit reached. Please try again in a few minutes.",
+  },
+  keyGenerator: (req: Request) => {
+    return ((req as any).user?.userId || req.ip || "gh-sync") as string;
+  },
+});
+

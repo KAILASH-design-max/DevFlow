@@ -22,6 +22,7 @@ pnpm-debug.log*
 # Build
 dist/
 build/
+*.tsbuildinfo
 
 # Prisma
 *.db

@@ -39,8 +39,20 @@ export const createWorkspaceSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+export const updateWorkspaceSchema = createWorkspaceSchema.partial();
+
 export const inviteMemberSchema = z.object({
   email: z.string().email("Invalid email address"),
+  role: z.enum([
+    ROLES.ADMIN,
+    ROLES.PROJECT_MANAGER,
+    ROLES.DEVELOPER,
+    ROLES.TESTER,
+    ROLES.VIEWER,
+  ]),
+});
+
+export const updateMemberRoleSchema = z.object({
   role: z.enum([
     ROLES.ADMIN,
     ROLES.PROJECT_MANAGER,
@@ -163,6 +175,13 @@ export const analyzeIssueSchema = z.object({
   description: z.string().optional(),
 });
 
+export const summarizePrSchema = z.object({
+  title: z.string().min(1, "PR title is required"),
+  headBranch: z.string().optional(),
+  baseBranch: z.string().optional(),
+  issueKey: z.string().optional(),
+});
+
 // ─────────────────────────────────────────────
 // GitHub Validators
 // ─────────────────────────────────────────────
@@ -182,6 +201,15 @@ export const linkRepoSchema = z.object({
   token: z.string().min(1, "Token is required"),
 });
 
+export const createPullRequestSchema = z.object({
+  projectId: z.string().min(1, "Project ID is required"),
+  title: z.string().min(1, "Title is required").max(200),
+  headBranch: z.string().min(1, "Head branch is required"),
+  baseBranch: z.string().default("main"),
+  body: z.string().optional(),
+  issueKey: z.string().optional(),
+});
+
 // ─────────────────────────────────────────────
 // Export Types
 // ─────────────────────────────────────────────
@@ -189,7 +217,9 @@ export const linkRepoSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;
+export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceSchema>;
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
@@ -214,3 +244,6 @@ export const aiAnalysisResultSchema = z.object({
 export type AiAnalysisResultInput = z.infer<typeof aiAnalysisResultSchema>;
 export type VerifyPatInput = z.infer<typeof verifyPatSchema>;
 export type LinkRepoInput = z.infer<typeof linkRepoSchema>;
+export type SummarizePrInput = z.infer<typeof summarizePrSchema>;
+export type CreatePullRequestInput = z.infer<typeof createPullRequestSchema>;
+

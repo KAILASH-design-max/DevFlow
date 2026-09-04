@@ -8,9 +8,6 @@ import {
   Layers,
   User,
   Mail,
-  Lock,
-  Eye,
-  EyeOff,
   ArrowRight,
   ArrowLeft,
   Sparkles,
@@ -21,7 +18,6 @@ import {
   AlertCircle,
   KeyRound,
   RotateCw,
-  MailCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -118,7 +114,7 @@ function MarketingPanel() {
           Intelligent issue tracking for modern teams.
         </h2>
         <p className="text-sm text-slate-600 leading-relaxed mb-6">
-          Sign in seamlessly with Google, Password, or 6-digit Email OTP. Synchronize your teams, sprints, and tasks across devices in real time.
+          Sign in seamlessly with Google or 6-digit Email OTP. Synchronize your teams, sprints, and tasks across devices in real time.
         </p>
 
         {/* Features List */}
@@ -308,21 +304,15 @@ export default function HomePage() {
   const {
     user,
     loading: authLoading,
-    signInWithEmail,
-    signUpWithEmail,
     signInWithGoogle,
-    resetPassword,
     sendSignupOtp,
     verifySignupOtp,
     sendLoginOtp,
     verifyLoginOtp,
     resendOtp,
-    forgotPasswordOtp,
   } = useAuth();
 
   const [isSignup, setIsSignup] = useState(false);
-  const [isForgotPassword, setIsForgotPassword] = useState(false);
-  const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [isOtpMode, setIsOtpMode] = useState(false);
   const [otpPurpose, setOtpPurpose] = useState<"SIGNUP" | "LOGIN">("SIGNUP");
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
@@ -337,8 +327,6 @@ export default function HomePage() {
   const [workspaceUrl, setWorkspaceUrl] = useState("");
   const [role, setRole] = useState("DEVELOPER");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
   // Redirect to dashboard if logged in
   useEffect(() => {
@@ -358,12 +346,11 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  // Clean error when switching sign in/up/forgot password/OTP
+  // Clean error when switching sign in/up/OTP
   useEffect(() => {
     setError("");
     setSuccessMsg("");
-    setForgotPasswordSent(false);
-  }, [isSignup, isForgotPassword, isOtpMode]);
+  }, [isSignup, isOtpMode]);
 
   // Handle Google Sign-in
   const handleGoogleSignIn = async () => {
@@ -475,7 +462,6 @@ export default function HomePage() {
       await resendOtp({
         email,
         purpose: otpPurpose,
-        password: password || undefined,
         name: fullName || undefined,
         role: role || undefined,
         workspaceUrl: workspaceUrl || undefined,
@@ -486,27 +472,6 @@ export default function HomePage() {
       setOtpDigits(["", "", "", "", "", ""]);
     } catch (err: any) {
       setError(err.message || "Failed to resend code. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle Password Reset
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) {
-      setError("Please enter your email address.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      await forgotPasswordOtp(email.trim());
-      setForgotPasswordSent(true);
-      setSuccessMsg(`Password reset instructions sent to ${email}`);
-    } catch (err: any) {
-      console.error("Reset Password Error:", err);
-      setError(err.message || "Failed to send reset email.");
     } finally {
       setLoading(false);
     }
@@ -531,8 +496,6 @@ export default function HomePage() {
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
                   {isOtpMode
                     ? "Verify Your Email"
-                    : isForgotPassword
-                    ? "Reset your password"
                     : isSignup
                     ? "Create an account"
                     : "Sign in with OTP"}
@@ -541,15 +504,13 @@ export default function HomePage() {
               <p className="text-slate-600 text-sm">
                 {isOtpMode
                   ? `Enter the 6-digit code sent to ${email}`
-                  : isForgotPassword
-                  ? "Enter your email to receive a password reset link."
                   : isSignup
                   ? "Start managing issues with AI and OTP verification"
                   : "Receive a 6-digit one-time code to sign in instantly"}
               </p>
             </div>
 
-            {!isForgotPassword && !isOtpMode && (
+            {!isOtpMode && (
               <>
                 {/* Google Sign-in Button */}
                 <button
@@ -664,71 +625,8 @@ export default function HomePage() {
                   </button>
                 </div>
               </form>
-            ) : isForgotPassword ? (
-              /* ── 2. FORGOT PASSWORD FORM ── */
-              forgotPasswordSent ? (
-                <div className="text-center py-4">
-                  <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xs">
-                    <CheckCircle2 className="w-7 h-7" />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 mb-1">Reset Link Sent!</h3>
-                  <p className="text-xs text-slate-600 mb-2">
-                    We have sent a password reset link to:
-                  </p>
-                  <div className="inline-block px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-indigo-700 font-semibold text-xs mb-3 font-mono">
-                    {email}
-                  </div>
-                  <p className="text-xs text-slate-500 mb-5 max-w-xs mx-auto">
-                    Please check your inbox (and spam folder) to reset your password.
-                  </p>
-                  <div className="space-y-2.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotPasswordSent(false);
-                        setIsForgotPassword(false);
-                      }}
-                      className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xs cursor-pointer"
-                    >
-                      <span>Back to Sign In</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <form onSubmit={handleResetPassword} className="space-y-4">
-                  <InputField
-                    label="Email Address"
-                    icon={<Mail className="w-4 h-4" />}
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="alice@devflow.io"
-                    disabled={loading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full mt-2 flex justify-center items-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 shadow-sm transition-all disabled:opacity-75 cursor-pointer"
-                  >
-                    {loading ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      "Send Reset Link"
-                    )}
-                  </button>
-                  <div className="mt-4 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setIsForgotPassword(false)}
-                      className="text-sm font-semibold text-slate-600 hover:text-indigo-600 transition cursor-pointer"
-                    >
-                      Back to Sign In
-                    </button>
-                  </div>
-                </form>
-              )
             ) : (
-              /* ── 3. EMAIL / PASSWORD / SIGNUP FORM ── */
+              /* ── 2. EMAIL SIGNUP / SIGNIN FORM ── */
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 {isSignup ? (
                   <>
@@ -815,7 +713,7 @@ export default function HomePage() {
           </div>
 
           {/* Toggle Sign Up / Sign In */}
-          {!isForgotPassword && !isOtpMode && (
+          {!isOtpMode && (
             <div className="mt-5 text-center text-sm text-slate-600">
               {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
               <button

@@ -94,8 +94,8 @@ billingRouter.post(
         return;
       }
 
-      // SECURITY: Only ADMINs can change subscription plans
-      await verifyWorkspaceMembership(req.user!.userId, workspaceId, ["ADMIN"]);
+      // SECURITY: Only ADMINs and OWNERs can change subscription plans
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId, ["ADMIN", "OWNER"]);
 
       const result = await BillingService.processCheckout({
         workspaceId,
@@ -145,8 +145,8 @@ billingRouter.post(
         return;
       }
 
-      // SECURITY: Only ADMINs can cancel/resume subscriptions
-      await verifyWorkspaceMembership(req.user!.userId, workspaceId, ["ADMIN"]);
+      // SECURITY: Only ADMINs and OWNERs can cancel/resume subscriptions
+      await verifyWorkspaceMembership(req.user!.userId, workspaceId, ["ADMIN", "OWNER"]);
 
       const subscription = await BillingService.toggleCancelAtPeriodEnd(workspaceId);
       res.json({ success: true, data: subscription });
