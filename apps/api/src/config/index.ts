@@ -1,13 +1,10 @@
 import dotenv from "dotenv";
 import crypto from "crypto";
 import path from "path";
-import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Load .env reliably using absolute directory paths
-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+// Load .env reliably from current working directory or monorepo root
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 dotenv.config();
 
 const stableDevSecret = process.env.JWT_SECRET || "dF!9xQ#mK7$pL2vR8@wN3hY6&jT0cA5eB4gU1sZ";
