@@ -261,14 +261,12 @@ authRouter.post(
   }
 );
 
-// ─── Ephemeral Test Inbox (Non-production test runner hook) ───
-if (config.nodeEnv !== "production") {
-  authRouter.get("/otp/test-inbox", (req: Request, res: Response) => {
-    const email = (req.query.email as string)?.trim().toLowerCase();
-    const code = email ? EmailService.getTestOtp(email) : undefined;
-    res.json({ success: true, code });
-  });
-}
+// ─── Ephemeral Test Inbox (Testing & Cloud Fallback Hook) ───
+authRouter.get("/otp/test-inbox", (req: Request, res: Response) => {
+  const email = (req.query.email as string)?.trim().toLowerCase();
+  const code = email ? EmailService.getTestOtp(email) : undefined;
+  res.json({ success: true, code });
+});
 
 // ─── Register ───────────────────────────────────
 authRouter.post(

@@ -280,6 +280,65 @@ export class EmailService {
       timestamp: Date.now(),
     });
 
+    // 1. Prioritize Resend HTTPS API if RESEND_API_KEY is configured (works on Render without port blocks)
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      try {
+        const fromAddress = process.env.RESEND_FROM || process.env.EMAIL_FROM || "DevFlow Security <onboarding@resend.dev>";
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromAddress,
+            to: [to],
+            subject,
+            html,
+            text,
+          }),
+        });
+        if (res.ok) {
+          console.log(`[EmailService] OTP email dispatched via Resend to ${to} [Purpose: ${purpose}]`);
+          return true;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn("[EmailService] Resend API error:", errData);
+        }
+      } catch (resendErr: any) {
+        console.warn("[EmailService] Resend network error:", resendErr?.message || resendErr);
+      }
+    }
+
+    // 2. Try Brevo HTTPS API if BREVO_API_KEY is configured
+    const brevoApiKey = process.env.BREVO_API_KEY;
+    if (brevoApiKey) {
+      try {
+        const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": brevoApiKey.trim(),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sender: { name: "DevFlow Security", email: process.env.SMTP_USER || "noreply@devflow.io" },
+            to: [{ email: to }],
+            subject,
+            htmlContent: html,
+            textContent: text,
+          }),
+        });
+        if (res.ok) {
+          console.log(`[EmailService] OTP email dispatched via Brevo to ${to}`);
+          return true;
+        }
+      } catch (brevoErr: any) {
+        console.warn("[EmailService] Brevo network error:", brevoErr?.message || brevoErr);
+      }
+    }
+
+    // 3. Fallback to direct SMTP transport (Nodemailer)
     try {
       const transporter = this.getTransporter();
       const fromAddress = this.resolveFromAddress();
@@ -339,6 +398,33 @@ export class EmailService {
     const { to, workspaceName, inviterName, role, inviteUrl } = params;
     const { html, text } = this.renderInvitationTemplate(params);
     const subject = `You've been invited to join ${workspaceName} on DevFlow`;
+
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      try {
+        const fromAddress = process.env.RESEND_FROM || process.env.EMAIL_FROM || "DevFlow Security <onboarding@resend.dev>";
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromAddress,
+            to: [to],
+            subject,
+            html,
+            text,
+          }),
+        });
+        if (res.ok) {
+          console.log(`[EmailService] Workspace invitation dispatched via Resend to ${to}`);
+          return true;
+        }
+      } catch (resendErr) {
+        console.warn("[EmailService] Resend API error for invitation:", resendErr);
+      }
+    }
 
     try {
       const transporter = this.getTransporter();
