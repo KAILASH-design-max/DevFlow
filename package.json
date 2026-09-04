@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "start": "pnpm --filter @devflow/api start",
     "postinstall": "pnpm db:generate",
     "dev": "turbo dev",
     "build": "turbo build",
