@@ -9,9 +9,11 @@ const projectId =
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
+export const isFirebaseConfigured = Boolean(clientEmail && privateKey);
+
 // Warn in production if service account credentials are missing
-if (process.env.NODE_ENV === "production" && (!clientEmail || !privateKey)) {
-  console.warn("⚠️  WARNING: Production environment is missing FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY. Initializing with default projectId fallback.");
+if (process.env.NODE_ENV === "production" && !isFirebaseConfigured) {
+  console.warn("⚠️  NOTICE: FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY not set. Using native JWT authentication.");
 }
 
 let firebaseAdminApp: App;

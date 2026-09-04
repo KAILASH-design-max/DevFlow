@@ -6,7 +6,7 @@ import { createError } from "../../middleware/errorHandler.js";
 import { AuthService } from "./auth.service.js";
 import { EmailService } from "../../services/email.service.js";
 import { SecurityAuditService } from "./audit.service.js";
-import { adminAuth } from "../../config/firebaseAdmin.js";
+import { adminAuth, isFirebaseConfigured } from "../../config/firebaseAdmin.js";
 
 // Purpose Enum matching Prisma Schema
 export type OtpPurpose = "SIGNUP" | "LOGIN" | "PASSWORD_RESET" | "EMAIL_CHANGE";
@@ -59,6 +59,9 @@ export class OtpService {
     email: string;
     name?: string | null;
   }): Promise<string | null> {
+    if (!isFirebaseConfigured) {
+      return null;
+    }
     try {
       let fbUser;
       try {

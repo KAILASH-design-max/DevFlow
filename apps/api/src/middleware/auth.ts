@@ -17,7 +17,7 @@ declare global {
   }
 }
 
-import { adminAuth } from "../config/firebaseAdmin.js";
+import { adminAuth, isFirebaseConfigured } from "../config/firebaseAdmin.js";
 
 /**
  * Middleware: Verify Firebase ID token or fallback JWT access token
@@ -41,9 +41,10 @@ export async function authenticate(
       throw createError("Authentication required", 401);
     }
 
-    // 1. Try Firebase ID Token first
-    try {
-      const decodedFirebase = await adminAuth.verifyIdToken(token);
+    // 1. Try Firebase ID Token first (only when service account credentials are provided)
+    if (isFirebaseConfigured) {
+      try {
+        const decodedFirebase = await adminAuth.verifyIdToken(token);
       let dbUserId = decodedFirebase.uid;
       
       if (decodedFirebase.email) {
@@ -58,8 +59,9 @@ export async function authenticate(
         email: decodedFirebase.email || "",
       };
       return next();
-    } catch {
-      // Token not a Firebase token or Firebase verification failed, try internal JWT
+      } catch {
+        // Token not a Firebase token or Firebase verification failed, try internal JWT
+      }
     }
 
     // 2. Internal JWT verification
