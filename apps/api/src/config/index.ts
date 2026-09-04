@@ -8,6 +8,9 @@ dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
 dotenv.config();
 
 if (!process.env.DATABASE_URL) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("🚨 CRITICAL SECURITY CONFIGURATION ERROR: DATABASE_URL must be explicitly configured in production!");
+  }
   process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/devflow?schema=public";
 }
 

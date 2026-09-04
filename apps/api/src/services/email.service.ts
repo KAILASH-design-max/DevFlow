@@ -273,12 +273,14 @@ export class EmailService {
       otp,
     });
 
-    // Store in test inbox for automated test execution
-    this.testInbox.set(to.toLowerCase(), {
-      otp,
-      purpose,
-      timestamp: Date.now(),
-    });
+    // Store in test inbox for automated test execution (strictly non-production only)
+    if (config.nodeEnv !== "production") {
+      this.testInbox.set(to.toLowerCase(), {
+        otp,
+        purpose,
+        timestamp: Date.now(),
+      });
+    }
 
     // 1. Prioritize Resend HTTPS API if RESEND_API_KEY is configured (works on Render without port blocks)
     const rawResendApiKey = process.env.RESEND_API_KEY;
@@ -363,24 +365,29 @@ export class EmailService {
       const maskedEmail = parts.length === 2 ? `${parts[0].charAt(0)}***@${parts[1]}` : "recipient";
       console.log(`[EmailService] OTP email dispatched to ${maskedEmail} [Purpose: ${purpose}]`);
 
-      console.log(`\n╔════════════════════════════════════════════════════════════╗`);
-      console.log(`║ 🔑 DEVFLOW EMAIL OTP DISPATCH                              ║`);
-      console.log(`║ Recipient: ${to.padEnd(46, " ")} ║`);
-      console.log(`║ Purpose:   ${purpose.padEnd(46, " ")} ║`);
-      console.log(`║ OTP Code:  ${otp.padEnd(46, " ")} ║`);
-      console.log(`║ Valid for: 5 minutes                                       ║`);
-      console.log(`╚════════════════════════════════════════════════════════════╝\n`);
+      // In non-production development/testing environments, display debug dispatch banner
+      if (config.nodeEnv !== "production") {
+        console.log(`\n╔════════════════════════════════════════════════════════════╗`);
+        console.log(`║ 🔑 DEVFLOW EMAIL OTP DISPATCH                              ║`);
+        console.log(`║ Recipient: ${to.padEnd(46, " ")} ║`);
+        console.log(`║ Purpose:   ${purpose.padEnd(46, " ")} ║`);
+        console.log(`║ OTP Code:  ${otp.padEnd(46, " ")} ║`);
+        console.log(`║ Valid for: 5 minutes                                       ║`);
+        console.log(`╚════════════════════════════════════════════════════════════╝\n`);
+      }
 
       return true;
     } catch (err: any) {
       console.error("[EmailService] Email dispatch failed:", err?.message || err);
-      console.log(`\n╔════════════════════════════════════════════════════════════╗`);
-      console.log(`║ 🔑 DEVFLOW EMAIL OTP (FALLBACK - SMTP BLOCKED/TIMEOUT)      ║`);
-      console.log(`║ Recipient: ${to.padEnd(46, " ")} ║`);
-      console.log(`║ Purpose:   ${purpose.padEnd(46, " ")} ║`);
-      console.log(`║ OTP Code:  ${otp.padEnd(46, " ")} ║`);
-      console.log(`║ Valid for: 5 minutes                                       ║`);
-      console.log(`╚════════════════════════════════════════════════════════════╝\n`);
+      if (config.nodeEnv !== "production") {
+        console.log(`\n╔════════════════════════════════════════════════════════════╗`);
+        console.log(`║ 🔑 DEVFLOW EMAIL OTP (FALLBACK - SMTP BLOCKED/TIMEOUT)      ║`);
+        console.log(`║ Recipient: ${to.padEnd(46, " ")} ║`);
+        console.log(`║ Purpose:   ${purpose.padEnd(46, " ")} ║`);
+        console.log(`║ OTP Code:  ${otp.padEnd(46, " ")} ║`);
+        console.log(`║ Valid for: 5 minutes                                       ║`);
+        console.log(`╚════════════════════════════════════════════════════════════╝\n`);
+      }
       return true;
     }
   }

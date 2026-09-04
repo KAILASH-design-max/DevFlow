@@ -261,8 +261,11 @@ authRouter.post(
   }
 );
 
-// ─── Ephemeral Test Inbox (Testing & Cloud Fallback Hook) ───
+// ─── Ephemeral Test Inbox (Testing & CI Hook — Disabled in Production) ───
 authRouter.get("/otp/test-inbox", (req: Request, res: Response) => {
+  if (config.nodeEnv === "production") {
+    return res.status(404).json({ success: false, message: "Not found" });
+  }
   const email = (req.query.email as string)?.trim().toLowerCase();
   const code = email ? EmailService.getTestOtp(email) : undefined;
   res.json({ success: true, code });
