@@ -19,6 +19,7 @@ import { AuthProvider } from "../context/AuthContext";
 import { NetworkProvider } from "../context/NetworkContext";
 import { ThemeProvider } from "../context/ThemeContext";
 import { Toaster } from "react-hot-toast";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export default function RootLayout({
   children,
@@ -86,6 +87,7 @@ export default function RootLayout({
             },
           }}
         />
+        <SpeedInsights />
       </body>
     </html>
   );
