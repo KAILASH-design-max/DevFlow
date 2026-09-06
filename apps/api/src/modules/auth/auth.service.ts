@@ -204,9 +204,9 @@ export class AuthService {
   }
 
   /**
-   * Logout user by invalidating the refresh token family
+   * Logout user by invalidating the refresh token family and deactivating sessions
    */
-  static async logout(refreshToken?: string) {
+  static async logout(refreshToken?: string, userId?: string) {
     if (refreshToken) {
       const storedToken = await prisma.refreshToken.findUnique({
         where: { token: refreshToken },
@@ -216,7 +216,15 @@ export class AuthService {
         await prisma.refreshToken.deleteMany({
           where: { family: storedToken.family },
         });
+        if (!userId) userId = storedToken.userId;
       }
+    }
+
+    if (userId) {
+      await prisma.session.updateMany({
+        where: { userId, isCurrent: true },
+        data: { isCurrent: false },
+      }).catch(() => {});
     }
   }
 

@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { getSafeRedirectUrl } from "@/lib/security";
 import { OtpInputGroup } from "@/components/OtpInputGroup";
 import { ShieldCheck, ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, Loader2, MailCheck } from "lucide-react";
 import toast from "react-hot-toast";
@@ -49,7 +50,7 @@ function VerifyEmailForm() {
     return () => clearInterval(timer);
   }, []);
 
-  const redirectUrl = searchParams.get("redirect") || "/dashboard";
+  const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect"));
 
   const handleVerify = async (submittedCode?: string) => {
     const codeToVerify = submittedCode || code;

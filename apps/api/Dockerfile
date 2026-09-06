@@ -3,7 +3,7 @@
 # ===================================================
 FROM node:20-alpine AS base
 RUN apk add --no-cache libc6-compat openssl wget
-RUN npm install -g pnpm@9.15.0
+RUN npm install -g pnpm@9.15.9
 WORKDIR /app
 
 # ===================================================
@@ -38,7 +38,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat openssl wget
-RUN npm install -g pnpm@9.15.0
+RUN npm install -g pnpm@9.15.9
 
 ENV NODE_ENV=production
 ENV PORT=4000

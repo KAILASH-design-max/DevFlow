@@ -17,28 +17,30 @@ import {
 
 
 import { useSettingsContext } from "../SettingsContext";
+import { useTheme } from "@/context/ThemeContext";
 import { TIMEZONES, AVATAR_GRADIENTS, DATE_FORMAT_OPTIONS, RBAC_ROLE_PERMISSIONS_MATRIX, ROLES } from "../constants";
 
 export default function PreferencesTab() {
   const {
     handlePreferencesSubmit, preferences, saving, setPreferences, workspace
   } = useSettingsContext();
+  const { setTheme } = useTheme();
 
   return (
     <form onSubmit={handlePreferencesSubmit} className="space-y-8">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   Application Preferences
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Customize your default start-up page, color theme, and localized time display
                 </p>
               </div>
 
               {/* Theme Selector */}
               <div className="space-y-3">
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Interface Appearance Theme
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
@@ -52,25 +54,28 @@ export default function PreferencesTab() {
                     return (
                       <div
                         key={th.id}
-                        onClick={() => setPreferences({ ...preferences, theme: th.id as any })}
+                        onClick={() => {
+                          setPreferences({ ...preferences, theme: th.id as any });
+                          setTheme(th.id as any);
+                        }}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
                           isSelected
-                            ? "bg-indigo-50/60 border-indigo-600 shadow-xs"
-                            : "bg-white border-slate-200 hover:border-slate-300 shadow-2xs"
+                            ? "bg-indigo-50/60 dark:bg-indigo-950/60 border-indigo-600 shadow-xs"
+                            : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs"
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Icon className={`w-4 h-4 ${isSelected ? "text-indigo-600" : "text-slate-500"}`} />
-                            <h4 className="text-xs font-bold text-slate-900">{th.label}</h4>
+                            <Icon className={`w-4 h-4 ${isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"}`} />
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-white">{th.label}</h4>
                           </div>
                           <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                            isSelected ? "border-indigo-600 bg-indigo-600" : "border-slate-300"
+                            isSelected ? "border-indigo-600 bg-indigo-600" : "border-slate-300 dark:border-slate-600"
                           }`}>
                             {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                           </div>
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-relaxed">{th.desc}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">{th.desc}</p>
                       </div>
                     );
                   })}

@@ -7,6 +7,8 @@ export class AIService {
    * Analyze issue title & description to generate subtasks, root cause, labels, and story points
    */
   static async analyzeIssue(title: string, description?: string, projectId?: string): Promise<AiAnalysisResult> {
+    const safeTitle = (title || "").trim().slice(0, 500);
+    const safeDescription = description ? description.trim().slice(0, 10000) : undefined;
     let projectContext = undefined;
 
     if (projectId) {
@@ -40,10 +42,10 @@ export class AIService {
     }
 
     if (config.aiProvider === "gemini" && config.geminiApiKey) {
-      return this.callGeminiApi(title, description, projectContext);
+      return this.callGeminiApi(safeTitle, safeDescription, projectContext);
     }
 
-    return this.generateSmartMockAnalysis(title, description, projectContext);
+    return this.generateSmartMockAnalysis(safeTitle, safeDescription, projectContext);
   }
 
   /**
@@ -96,8 +98,8 @@ export class AIService {
       });
     }
 
-    // Fallback seed issues if DB is sparse in dev
-    if (existingIssues.length === 0) {
+    // Fallback seed issues if DB is sparse only in non-production environments
+    if (existingIssues.length === 0 && !config.isProduction) {
       const mockProjectIssues = [
         { id: "PHX-1042", number: 1042, title: "Checkout crashes when applying coupon code SAVE20", status: "IN_PROGRESS", priority: "HIGH" },
         { id: "PHX-1040", number: 1040, title: "Payment gateway timeout on 3D Secure verification", status: "IN_REVIEW", priority: "CRITICAL" },

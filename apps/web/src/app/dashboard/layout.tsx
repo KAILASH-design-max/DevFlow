@@ -49,10 +49,12 @@ import { notificationApi, issueApi, projectApi, workspaceApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useRealtime } from "@/lib/useRealtime";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 
 
 const NAV_ITEMS = [
+  // DevFlow navigation items
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/dashboard/projects", icon: FolderKanban, label: "Projects" },
   { href: "/dashboard/issues", icon: ListTodo, label: "Issues" },
@@ -458,26 +460,26 @@ export default function DashboardLayout({
   }
 
   return (
-    <div suppressHydrationWarning className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden antialiased font-sans">
+    <div suppressHydrationWarning className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden antialiased font-sans">
       {/* ─── SideNavBar ─────────────────────────────────── */}
       <aside
         suppressHydrationWarning
         className={`${
           isSidebarCollapsed ? "w-[68px]" : "w-[260px]"
-        } bg-white border-r border-slate-200 flex flex-col h-screen overflow-y-auto overflow-x-hidden transition-all duration-200 z-30 flex-shrink-0 shadow-[1px_0_4px_rgba(0,0,0,0.02)] relative group/sidebar`}
+        } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen overflow-y-auto overflow-x-hidden transition-all duration-200 z-30 flex-shrink-0 shadow-[1px_0_4px_rgba(0,0,0,0.02)] relative group/sidebar`}
       >
         {/* Brand / Logo + Collapse Toggle */}
-        <div className={`p-4 ${isSidebarCollapsed ? "px-3 justify-center" : "px-5 justify-between"} flex items-center gap-3 border-b border-slate-100/60`}>
+        <div className={`p-4 ${isSidebarCollapsed ? "px-3 justify-center" : "px-5 justify-between"} flex items-center gap-3 border-b border-slate-100/60 dark:border-slate-800`}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center border border-indigo-100 text-indigo-600 shadow-sm shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 flex items-center justify-center border border-indigo-100 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 shadow-sm shrink-0">
               <Layers className="w-5 h-5" />
             </div>
             {!isSidebarCollapsed && (
               <div className="min-w-0 truncate">
-                <h1 className="font-sans text-base font-bold text-slate-900 tracking-tight leading-none">
+                <h1 className="font-sans text-base font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-none">
                   DevFlow
                 </h1>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-semibold mt-1 truncate" title={workspaceName}>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold mt-1 truncate" title={workspaceName}>
                   {workspaceName}
                 </p>
               </div>
@@ -526,7 +528,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Main Navigation Links */}
-        <nav className={`flex-1 ${isSidebarCollapsed ? "px-2 space-y-1.5" : "px-3 space-y-1"}`}>
+        <nav suppressHydrationWarning className={`flex-1 ${isSidebarCollapsed ? "px-2 space-y-1.5" : "px-3 space-y-1"}`}>
           {NAV_ITEMS.map((item) => {
             const isActive =
               pathname === item.href ||
@@ -535,19 +537,20 @@ export default function DashboardLayout({
               <Link
                 key={item.href}
                 href={item.href}
+                suppressHydrationWarning
                 title={isSidebarCollapsed ? item.label : undefined}
                 className={`flex items-center ${
                   isSidebarCollapsed ? "justify-center h-10 w-full px-0" : "justify-between px-3.5 py-2.5"
                 } rounded-lg transition-all duration-150 text-left ${
                   isActive
-                    ? "text-indigo-700 font-semibold bg-indigo-50/80 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/70"
+                    ? "text-indigo-700 dark:text-indigo-300 font-semibold bg-indigo-50/80 dark:bg-indigo-950/60 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
                 }`}
               >
                 <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-3"}`}>
                   <item.icon
                     className={`w-4.5 h-4.5 shrink-0 ${
-                      isActive ? "text-indigo-600" : "text-slate-500"
+                      isActive ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"
                     }`}
                   />
                   {!isSidebarCollapsed && (
@@ -580,7 +583,7 @@ export default function DashboardLayout({
         </nav>
 
         {/* Footer Navigation (Shortcuts, Docs, Support, Collapse indicator) */}
-        <div className={`p-2 border-t border-slate-100 mt-auto space-y-1 ${isSidebarCollapsed ? "text-center" : ""}`}>
+        <div suppressHydrationWarning className={`p-2 border-t border-slate-100 dark:border-slate-800 mt-auto space-y-1 ${isSidebarCollapsed ? "text-center" : ""}`}>
           <button
             onClick={() => setIsShortcutsOpen(true)}
             title={isSidebarCollapsed ? "Shortcuts (?)" : undefined}
@@ -601,30 +604,32 @@ export default function DashboardLayout({
 
           <Link
             href="/dashboard/docs"
+            suppressHydrationWarning
             title={isSidebarCollapsed ? "Documentation" : undefined}
             className={`w-full flex items-center ${
               isSidebarCollapsed ? "justify-center h-9 px-0" : "gap-3 px-3 py-2"
-            } rounded-lg text-left text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors text-xs font-medium`}
+            } rounded-lg text-left text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium`}
           >
-            <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+            <FileText className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
             {!isSidebarCollapsed && <span>Documentation</span>}
           </Link>
 
           <Link
             href="/dashboard/support"
+            suppressHydrationWarning
             title={isSidebarCollapsed ? "Support & Help" : undefined}
             className={`w-full flex items-center ${
               isSidebarCollapsed ? "justify-center h-9 px-0" : "gap-3 px-3 py-2"
-            } rounded-lg text-left text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors text-xs font-medium`}
+            } rounded-lg text-left text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium`}
           >
-            <HelpCircle className="w-4 h-4 text-slate-500 shrink-0" />
+            <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
             {!isSidebarCollapsed && <span>Support &amp; Help</span>}
           </Link>
 
           {isSidebarCollapsed && (
             <button
               onClick={toggleSidebar}
-              className="w-full flex items-center justify-center h-9 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center h-9 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Expand Sidebar (Press [)"
               aria-label="Expand Sidebar"
             >
@@ -637,19 +642,19 @@ export default function DashboardLayout({
       {/* ─── Main Viewport & Header ─────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 z-20 flex justify-between items-center px-6 transition-all duration-200 shadow-xs gap-4">
+        <header className="h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-20 flex justify-between items-center px-6 transition-all duration-200 shadow-xs gap-4">
           {/* Left: Sidebar Toggle Button & Search Bar */}
           <div className="flex items-center gap-3">
             <button
               onClick={toggleSidebar}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-colors cursor-pointer"
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700 transition-colors cursor-pointer"
               title={isSidebarCollapsed ? "Expand Sidebar (Press [)" : "Close Sidebar (Press [)"}
               aria-label="Toggle Sidebar"
             >
               {isSidebarCollapsed ? (
-                <PanelLeftOpen className="w-4 h-4 text-indigo-600" />
+                <PanelLeftOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               ) : (
-                <PanelLeft className="w-4 h-4 text-slate-600" />
+                <PanelLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
               )}
             </button>
 
@@ -658,15 +663,15 @@ export default function DashboardLayout({
               onClick={() => setIsCommandOpen(true)}
               className="flex items-center w-72 md:w-80 lg:w-96 relative cursor-pointer group"
             >
-              <Search className="absolute left-3 w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+              <Search className="absolute left-3 w-4 h-4 text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
               <input
                 readOnly
-                className="w-full bg-slate-50 border border-slate-200 group-hover:border-indigo-300 rounded-lg py-2 pl-9 pr-14 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors cursor-pointer"
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 group-hover:border-indigo-300 dark:group-hover:border-indigo-500 rounded-lg py-2 pl-9 pr-14 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none transition-colors cursor-pointer"
                 placeholder="Search issues, projects, or press ⌘K..."
                 type="text"
               />
               <div className="absolute right-2.5 flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-500 border border-slate-200 bg-white rounded px-1.5 py-0.5 flex items-center gap-0.5 shadow-2xs font-medium">
+                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded px-1.5 py-0.5 flex items-center gap-0.5 shadow-2xs font-medium">
                   <Command className="w-2.5 h-2.5" />K
                 </span>
               </div>
@@ -779,11 +784,14 @@ export default function DashboardLayout({
             {/* Recent History Button */}
             <button
               onClick={() => setIsCommandOpen(true)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Recent History"
             >
               <History className="w-4 h-4" />
             </button>
+
+            {/* Color Mode / Theme Switcher */}
+            <ThemeToggle variant="dropdown" />
 
             {/* AI Release Notes Generator Button */}
             <button
@@ -819,19 +827,19 @@ export default function DashboardLayout({
             <div className="relative ml-1" ref={userMenuRef}>
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-1.5 focus:outline-none cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                className="flex items-center gap-1.5 focus:outline-none cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center text-xs font-bold text-white shadow-xs">
                   {user.name ? user.name[0].toUpperCase() : "U"}
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               </button>
 
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in">
-                  <div className="px-4 py-3 border-b border-slate-100">
-                    <p className="text-sm font-semibold text-slate-900">{user.name}</p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{user.email}</p>
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50 animate-fade-in">
+                  <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{user.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{user.email}</p>
                     <div className="mt-2">
                       <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${badgeConfig.badgeClass}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dotClass}`} />
@@ -840,10 +848,8 @@ export default function DashboardLayout({
                     </div>
                   </div>
 
-
-
                   <div className="py-1">
-                    <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
+                    <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-bold">
                       Switch Profile Role (RBAC)
                     </div>
                     {workspaceMembers.map((m) => {
@@ -853,23 +859,23 @@ export default function DashboardLayout({
                       <button
                         key={u.id}
                         onClick={() => handleSwitchUser(u)}
-                        className={`w-full px-4 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 transition-colors ${
-                          user.email === u.email ? "text-indigo-600 font-semibold bg-indigo-50/50" : "text-slate-700"
+                        className={`w-full px-4 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                          user.email === u.email ? "text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50/50 dark:bg-indigo-950/40" : "text-slate-700 dark:text-slate-300"
                         }`}
                       >
                         <div className="flex-1 truncate">
                           <span className="block truncate font-medium">{u.name}</span>
-                          <span className="text-[10px] text-slate-400 block truncate">{m.role}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">{m.role}</span>
                         </div>
-                        {user.email === u.email && <UserCheck className="w-4 h-4 text-indigo-600" />}
+                        {user.email === u.email && <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
                       </button>
                     )})}
                   </div>
 
-                  <div className="border-t border-slate-100 pt-1">
+                  <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
                     <button
                       onClick={handleLogout}
-                      className="w-full px-4 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors cursor-pointer font-medium"
+                      className="w-full px-4 py-2 text-left text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2 transition-colors cursor-pointer font-medium"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Sign Out</span>
@@ -882,7 +888,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-slate-50 relative">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-slate-50 dark:bg-slate-950 relative">{children}</main>
       </div>
 
 

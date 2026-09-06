@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-surface: #ffffff;
   --color-surface-dim: #f8fafc;
@@ -199,4 +201,61 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
   border-color: #94a3b8;
+}
+
+/* ─── Dark Mode Specific Overrides ─────────────────────────────────────── */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #090d16;
+  color: #f1f5f9;
+}
+
+html.dark .card-clean {
+  background: #0f172a;
+  border-color: #1e293b;
+  color: #f8fafc;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+html.dark .card-clean:hover {
+  border-color: #334155;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.6);
+}
+
+html.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: #1e293b;
+}
+
+html.dark .font-headline-md,
+html.dark .font-headline-sm,
+html.dark .font-display-lg {
+  color: #f8fafc;
+}
+
+html.dark .font-body-base {
+  color: #cbd5e1;
+}
+
+html.dark .font-body-sm {
+  color: #94a3b8;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+html.dark .kanban-col::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+
+html.dark .issue-card:hover {
+  border-color: #6366f1;
 }

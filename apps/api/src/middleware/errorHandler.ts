@@ -36,6 +36,17 @@ export function errorHandler(
     message = "An unexpected error occurred. Please try again later.";
   }
 
+  // Security sanitization: Strip internal infrastructure, database URIs, hostnames, or paths
+  if (
+    message.includes("postgresql://") ||
+    message.includes("neon.tech") ||
+    message.includes("PrismaClient") ||
+    message.includes("prisma.") ||
+    /([a-zA-Z]:\\|\/home\/|\/app\/)/.test(message)
+  ) {
+    message = "A database or system error occurred. Please try again later.";
+  }
+
   // Log server errors with full context (but never send to client)
   if (statusCode >= 500) {
     console.error(`❌ [${requestId}] Internal Error:`, {

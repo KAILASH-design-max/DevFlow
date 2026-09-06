@@ -384,8 +384,12 @@ authRouter.post(
   "/logout",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const refreshToken = req.cookies?.refreshToken;
-      await AuthService.logout(refreshToken);
+      const refreshToken =
+        req.cookies?.refreshToken ||
+        req.body?.refreshToken ||
+        (req.headers["x-refresh-token"] as string);
+      const userId = (req as any).user?.userId;
+      await AuthService.logout(refreshToken, userId);
 
       res.clearCookie("accessToken");
       res.clearCookie("refreshToken");
@@ -393,7 +397,7 @@ authRouter.post(
       await SecurityAuditService.logEvent({
         action: "LOGOUT",
         email: (req as any).user?.email || "authenticated-user",
-        userId: (req as any).user?.userId || null,
+        userId: userId || null,
         ip: req.ip,
         userAgent: req.headers["user-agent"] as string,
       });

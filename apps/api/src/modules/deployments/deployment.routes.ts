@@ -43,7 +43,7 @@ deploymentRoutes.post(
       const projectId = req.params.projectId as string;
       const { environment, status, version, commitSha, url } = req.body;
 
-      await verifyProjectAccess(req.user!.userId, projectId);
+      await verifyProjectAccess(req.user!.userId, projectId, ["ADMIN", "PROJECT_MANAGER", "DEVELOPER"]);
 
       const deployment = await DeploymentService.createDeployment(projectId, {
         environment,
@@ -101,7 +101,7 @@ deploymentRoutes.patch(
         res.status(404).json({ success: false, message: "Deployment not found" });
         return;
       }
-      await verifyProjectAccess(req.user!.userId, existingDeployment.projectId);
+      await verifyProjectAccess(req.user!.userId, existingDeployment.projectId, ["ADMIN", "PROJECT_MANAGER", "DEVELOPER"]);
 
       const deployment = await DeploymentService.updateDeploymentStatus(id, status, url);
 

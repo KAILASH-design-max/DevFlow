@@ -2,7 +2,40 @@
  * DevFlow Master E2E & Integration Test Suite Entrypoint
  */
 
-import { runAllTests } from "./runner.js";
+import { runAllTests, API_BASE, WEB_BASE } from "./runner.js";
+
+async function preflight(needsApi: boolean, needsWeb: boolean): Promise<boolean> {
+  let passed = true;
+  if (needsApi) {
+    try {
+      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) {
+        console.error(`\x1b[31m❌ Preflight failed: Target API at ${API_BASE}/health returned status ${res.status}\x1b[0m`);
+        passed = false;
+      }
+    } catch {
+      console.error(`\x1b[31m❌ Preflight connection failed: Target API at ${API_BASE} is not running or unreachable.\x1b[0m`);
+      console.error(`\x1b[33m👉 Please start the dev server first: 'npm run dev' or 'pnpm --filter @devflow/api run dev'\x1b[0m\n`);
+      passed = false;
+    }
+  }
+
+  if (needsWeb) {
+    try {
+      const res = await fetch(`${WEB_BASE}`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) {
+        console.error(`\x1b[31m❌ Preflight failed: Target Web at ${WEB_BASE} returned status ${res.status}\x1b[0m`);
+        passed = false;
+      }
+    } catch {
+      console.error(`\x1b[31m❌ Preflight connection failed: Target Web at ${WEB_BASE} is not running or unreachable.\x1b[0m`);
+      console.error(`\x1b[33m👉 Please start the dev server first: 'npm run dev' or 'pnpm --filter @devflow/web run dev'\x1b[0m\n`);
+      passed = false;
+    }
+  }
+
+  return passed;
+}
 
 // API Integration Suites
 import { registerAuthProfileTests } from "./api/01-auth-profile.test.js";
@@ -31,6 +64,14 @@ async function main() {
   const runOnlyBrowser = args.includes("--browser");
   const suiteArg = args.find((a) => a.startsWith("--suite="));
   const suiteFilter = suiteArg ? suiteArg.split("=")[1] : null;
+
+  const needsApi = suiteFilter ? !suiteFilter.startsWith("b") : !runOnlyBrowser;
+  const needsWeb = suiteFilter ? suiteFilter.startsWith("b") : !runOnlyApi;
+
+  const isReady = await preflight(needsApi, needsWeb);
+  if (!isReady) {
+    process.exit(1);
+  }
 
   if (suiteFilter) {
     if (suiteFilter === "1" || suiteFilter === "auth") registerAuthProfileTests();

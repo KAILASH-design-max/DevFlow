@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { authenticate } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { createError } from "../../middleware/errorHandler.js";
-import { createProjectSchema } from "@devflow/shared";
+import { createProjectSchema, updateProjectSchema } from "@devflow/shared";
 import { prisma } from "@devflow/database";
 import { ProjectService } from "./project.service.js";
 import { verifyWorkspaceMembership, verifyProjectAccess } from "../../middleware/authorizationHelpers.js";
@@ -94,6 +94,7 @@ projectRouter.get(
 // ─── Update Project ─────────────────────────────
 projectRouter.patch(
   "/:projectId",
+  validate(updateProjectSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // SECURITY: Verify user has access (ADMIN required for updates)

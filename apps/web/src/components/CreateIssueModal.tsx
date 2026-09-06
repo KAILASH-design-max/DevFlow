@@ -27,6 +27,9 @@ import {
 import { useUiStore } from "@/lib/store";
 import { aiApi, issueApi, projectApi, sprintApi, workspaceApi } from "@/lib/api";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useNetworkStatus } from "@/context/NetworkContext";
+import { useDraftPersistence, DraftIndicator } from "@/lib/useDraftPersistence";
+import toast from "react-hot-toast";
 
 const DEFAULT_MEMBERS = [
   { id: "usr_alice", name: "Alice Chen", role: "Lead Architect" },
@@ -49,6 +52,7 @@ const AVAILABLE_LABELS = [
 export default function CreateIssueModal() {
   const { isCreateIssueOpen, defaultStatus, closeCreateIssue } = useUiStore();
   const { canCreateIssue, role: activeRole } = usePermissions();
+  const { isOffline } = useNetworkStatus();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -66,6 +70,30 @@ export default function CreateIssueModal() {
   const [dismissedDuplicates, setDismissedDuplicates] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Unsaved draft persistence hook
+  const {
+    values: draftValues,
+    updateField: updateDraftField,
+    clearDraft,
+    saveState,
+    setSaveState,
+    isDraftLoaded,
+  } = useDraftPersistence({
+    key: "create_issue_modal",
+    initialValues: {
+      title: "",
+      description: "",
+    },
+  });
+
+  // Restore draft when modal opens
+  useEffect(() => {
+    if (isDraftLoaded && isCreateIssueOpen) {
+      if (draftValues.title && !title) setTitle(draftValues.title);
+      if (draftValues.description && !description) setDescription(draftValues.description);
+    }
+  }, [isDraftLoaded, isCreateIssueOpen]);
 
   // Dynamic context
   const [projects, setProjects] = useState<any[]>([]);
@@ -292,44 +320,55 @@ export default function CreateIssueModal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isSubmitting) return;
+
+    if (isOffline) {
+      toast.error("You are currently offline. Your draft is preserved locally until connection is restored.", {
+        id: "offline-create-issue",
+      });
+      return;
+    }
 
     setIsSubmitting(true);
+    setSaveState("saving_to_server");
 
     try {
-      let createdNumber = Math.floor(Date.now() / 1000) % 10000;
-
-      // 1. Save to Database via REST API
-      try {
-        const apiRes = await issueApi.create(projectId, {
-          title,
-          description: description || title,
-          type,
-          priority,
-          assigneeId: assigneeId || undefined,
-          sprintId: sprintId || undefined,
-          storyPoints: storyPoints || 3,
-          aiAnalysis: aiSuggestions ? JSON.stringify(aiSuggestions) : undefined,
-        });
-        if (apiRes?.success && apiRes.data?.number) {
-          createdNumber = apiRes.data.number;
-        }
-      } catch (apiErr) {
-        console.warn("API createIssue notice:", apiErr);
+      if (!projectId) {
+        throw new Error("No project selected. Please select a project first.");
       }
 
+      // 1. Save to Database via REST API with verified server response
+      const apiRes = await issueApi.create(projectId, {
+        title: title.trim(),
+        description: description.trim() || title.trim(),
+        type,
+        priority,
+        assigneeId: assigneeId || undefined,
+        sprintId: sprintId || undefined,
+        storyPoints: storyPoints || 3,
+        aiAnalysis: aiSuggestions ? JSON.stringify(aiSuggestions) : undefined,
+      });
 
+      if (!apiRes?.success) {
+        throw new Error(apiRes?.error || "Server could not confirm issue creation");
+      }
+
+      const createdNumber = apiRes.data?.number || 1;
+
+      // 2. Clear local draft now that server confirmed
+      clearDraft();
 
       // 3. Dispatch global browser event for instant UI update
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("devflow:issue_created", {
-            detail: { projectId, title, number: createdNumber },
+            detail: { projectId, title: title.trim(), number: createdNumber },
           })
         );
       }
 
       setIsSuccess(true);
+      toast.success(`Issue #${createdNumber} created successfully!`);
       setTimeout(() => {
         setIsSubmitting(false);
         setIsSuccess(false);
@@ -340,9 +379,13 @@ export default function CreateIssueModal() {
         setAiSuggestions(null);
         setFiles([]);
       }, 600);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Create issue failed:", err);
       setIsSubmitting(false);
+      setSaveState("draft_saved");
+      toast.error(
+        err?.message || "Couldn't connect to DevFlow. Your issue was not confirmed as saved. Please retry."
+      );
     }
   };
 
@@ -481,7 +524,10 @@ export default function CreateIssueModal() {
               required
               autoFocus
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                updateDraftField("title", e.target.value);
+              }}
               placeholder="e.g. Checkout crashes when user applies SAVE20 coupon"
               className="w-full px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all"
             />
@@ -582,7 +628,10 @@ export default function CreateIssueModal() {
             <textarea
               rows={4}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                updateDraftField("description", e.target.value);
+              }}
               placeholder="Describe what happened, expected behavior, and reproduction steps..."
               className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 text-slate-900 placeholder:text-slate-400 font-mono shadow-2xs leading-relaxed"
             />
@@ -668,18 +717,27 @@ export default function CreateIssueModal() {
 
         {/* Modal Footer Actions */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50/80">
-          <button
-            type="button"
-            onClick={closeCreateIssue}
-            className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={closeCreateIssue}
+              className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <DraftIndicator saveState={saveState} isOffline={isOffline} />
+          </div>
 
           <button
             onClick={handleSubmit}
-            disabled={!title.trim() || isSubmitting || !canCreateIssue}
-            title={!canCreateIssue ? `Role ${activeRole} cannot create issues` : undefined}
+            disabled={!title.trim() || isSubmitting || !canCreateIssue || isOffline}
+            title={
+              isOffline
+                ? "You are currently offline. Your draft is preserved locally."
+                : !canCreateIssue
+                ? `Role ${activeRole} cannot create issues`
+                : undefined
+            }
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
           >
             {isSuccess ? (
@@ -692,6 +750,8 @@ export default function CreateIssueModal() {
                 <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 <span>Creating Ticket...</span>
               </>
+            ) : isOffline ? (
+              <span>Offline (Draft Preserved)</span>
             ) : !canCreateIssue ? (
               <span>Create Restricted (Read-Only)</span>
             ) : (

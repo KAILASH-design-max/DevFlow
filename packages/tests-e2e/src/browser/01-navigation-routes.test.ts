@@ -16,6 +16,7 @@ export function registerNavigationRoutesTests() {
       { path: "/dashboard/deployments", name: "Deployments" },
       { path: "/dashboard/notifications", name: "Notification Center" },
       { path: "/dashboard/billing", name: "Billing & Plans" },
+      { path: "/offline", name: "Network Resilience Offline Screen" },
     ];
 
     for (const route of mainRoutes) {

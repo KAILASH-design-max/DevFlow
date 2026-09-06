@@ -22,7 +22,7 @@ labelRouter.post(
         res.status(400).json({ success: false, error: "projectId is required" });
         return;
       }
-      await verifyProjectAccess(req.user!.userId, projectId);
+      await verifyProjectAccess(req.user!.userId, projectId, ["ADMIN", "PROJECT_MANAGER", "DEVELOPER"]);
 
       const label = await prisma.label.create({
         data: { name, color, projectId },
@@ -75,7 +75,7 @@ labelRouter.delete(
         res.status(404).json({ success: false, error: "Label not found" });
         return;
       }
-      await verifyProjectAccess(req.user!.userId, label.projectId);
+      await verifyProjectAccess(req.user!.userId, label.projectId, ["ADMIN", "PROJECT_MANAGER"]);
 
       await prisma.label.delete({ where: { id: labelId } });
       res.json({ success: true, message: "Label deleted" });

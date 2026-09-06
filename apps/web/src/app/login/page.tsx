@@ -4,13 +4,15 @@ import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { getSafeRedirectUrl } from "@/lib/security";
 import toast from "react-hot-toast";
 import { Mail, ArrowRight, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get("redirect") || "/dashboard";
+  const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect"));
   const { sendLoginOtp } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -51,6 +53,11 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden selection:bg-indigo-500 selection:text-white">
+      {/* Top right theme toggle */}
+      <div className="absolute top-4 right-4 z-50">
+        <ThemeToggle variant="dropdown" />
+      </div>
+
       {/* Dynamic Background Glows */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/15 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-purple-600/10 blur-[100px] rounded-full pointer-events-none" />
@@ -116,11 +123,11 @@ function LoginForm() {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Sending sign-in code...
+                  Signing in...
                 </>
               ) : (
                 <>
-                  <span>Send Verification Code</span>
+                  <span>Sign -in</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

@@ -12,10 +12,10 @@ service firebase.storage {
       return request.resource.size < 25 * 1024 * 1024;
     }
 
-    // Workspace & Issue File Attachments
+    // Workspace & Issue File Attachments: direct client access denied
+    // All file operations MUST go through DevFlow backend API authorization
     match /workspaces/{workspaceId}/projects/{projectId}/issues/{issueId}/files/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize();
+      allow read, write: if false;
     }
 
     // User Profile Avatars (Publicly viewable, editable only by profile owner)

@@ -31,6 +31,7 @@ import path from "path";
 import crypto from "crypto";
 import { StorageService } from "./services/storage.service.js";
 import { prisma } from "@devflow/database";
+import { idempotencyMiddleware } from "./middleware/idempotency.js";
 
 const app = express();
 
@@ -133,6 +134,7 @@ app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 app.use(cookieParser());
+app.use(idempotencyMiddleware);
 
 // ─────────────────────────────────────────────
 // Request ID & Logging
@@ -191,8 +193,12 @@ const authLimiter = rateLimit({
 });
 
 // ─────────────────────────────────────────────
-// Health Check (excluded from rate limiting)
+// Health Check (Safe production health probes)
 // ─────────────────────────────────────────────
+
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 
 app.get("/api/health", async (_req, res) => {
   let dbStatus = "connected";
@@ -218,9 +224,8 @@ app.get("/", (_req, res) => {
   res.json({
     success: true,
     message: "DevFlow REST API Server",
-    webUiUrl: "http://localhost:3000",
-    dashboardUrl: "http://localhost:3000/dashboard",
-    healthCheck: "http://localhost:4000/api/health",
+    status: "ok",
+    healthCheck: "/health",
   });
 });
 
@@ -290,11 +295,13 @@ app.use(errorHandler);
 // ─────────────────────────────────────────────
 
 if (!process.env.VERCEL) {
-  const server = app.listen(config.port, () => {
+  const listenPort = process.env.PORT ? parseInt(process.env.PORT, 10) : config.port;
+  const server = app.listen(listenPort, "0.0.0.0", () => {
     console.log(`
   ╔═══════════════════════════════════════════╗
   ║     🚀 DevFlow API Server Running        ║
-  ║     Port: ${config.port}                          ║
+  ║     Host: 0.0.0.0                         ║
+  ║     Port: ${String(listenPort).padEnd(28)}║
   ║     Env:  ${config.nodeEnv.padEnd(28)}║
   ║     CORS: ${config.corsOrigin.padEnd(28)}║
   ║     Rate: ${String(config.rateLimitMax + " req/" + config.rateLimitWindowMs / 1000 + "s").padEnd(28)}║

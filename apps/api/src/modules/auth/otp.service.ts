@@ -265,11 +265,15 @@ export class OtpService {
       throw createError("Invalid verification code. Please check and try again.", 400);
     }
 
-    // Mark as verified/consumed (Replay protection)
-    await prisma.emailVerification.update({
-      where: { id: record.id },
+    // Mark as verified/consumed with atomic race condition check (Replay protection)
+    const consumeResult = await prisma.emailVerification.updateMany({
+      where: { id: record.id, verifiedAt: null },
       data: { verifiedAt: new Date() },
     });
+
+    if (consumeResult.count === 0) {
+      throw createError("Verification code has already been used. Please request a new code.", 400);
+    }
 
     // Parse stored payload
     const payload = record.payload ? JSON.parse(record.payload) : {};
@@ -563,11 +567,15 @@ export class OtpService {
       throw createError("Invalid verification code. Please check and try again.", 400);
     }
 
-    // Mark as consumed (Replay protection)
-    await prisma.emailVerification.update({
-      where: { id: record.id },
+    // Mark as consumed with atomic race condition check (Replay protection)
+    const consumeResult = await prisma.emailVerification.updateMany({
+      where: { id: record.id, verifiedAt: null },
       data: { verifiedAt: new Date() },
     });
+
+    if (consumeResult.count === 0) {
+      throw createError("Verification code has already been used or expired.", 400);
+    }
 
     // Ensure emailVerified is marked true
     if (!user.emailVerified) {
@@ -766,11 +774,15 @@ export class OtpService {
       throw createError("Invalid verification code. Please check and try again.", 400);
     }
 
-    // Mark as consumed (Replay protection)
-    await prisma.emailVerification.update({
-      where: { id: record.id },
+    // Mark as consumed with atomic race condition check (Replay protection)
+    const consumeResult = await prisma.emailVerification.updateMany({
+      where: { id: record.id, verifiedAt: null },
       data: { verifiedAt: new Date() },
     });
+
+    if (consumeResult.count === 0) {
+      throw createError("Verification code has already been used or expired.", 400);
+    }
 
     // Hash new password and update user
     const hashedPassword = await argon2.hash(newPassword, { type: argon2.argon2id });

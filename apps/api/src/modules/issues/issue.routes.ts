@@ -103,6 +103,7 @@ issueRouter.get(
 // ─── Update Issue ───────────────────────────────
 issueRouter.patch(
   "/:issueId",
+  validate(updateIssueSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // SECURITY: Verify user has access to this issue's project

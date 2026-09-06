@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: devflow-api
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @devflow/shared build && pnpm --filter @devflow/api build
+    startCommand: pnpm --filter @devflow/api start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OTP_HASH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false

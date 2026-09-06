@@ -16,6 +16,8 @@ export const metadata: Metadata = {
 };
 
 import { AuthProvider } from "../context/AuthContext";
+import { NetworkProvider } from "../context/NetworkContext";
+import { ThemeProvider } from "../context/ThemeContext";
 import { Toaster } from "react-hot-toast";
 
 export default function RootLayout({
@@ -30,9 +32,32 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var stored = localStorage.getItem('preferredTheme');
+                  var isDark = stored === 'dark' || ((!stored || stored === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                  if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.colorScheme = 'light';
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider>
+          <NetworkProvider>
+            <AuthProvider>{children}</AuthProvider>
+          </NetworkProvider>
+        </ThemeProvider>
         <Toaster
           position="top-center"
           toastOptions={{

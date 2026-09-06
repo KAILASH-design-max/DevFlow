@@ -78,6 +78,8 @@ githubRouter.get(
       const parts = typeof state === "string" ? state.split(":") : [];
       const projectId = parts.length > 1 ? parts[1] : "";
 
+      const primaryOrigin = (config.corsOrigin.split(",")[0] || "http://localhost:3000").trim();
+
       // Render a clean postMessage/redirect landing page
       res.send(`
         <!DOCTYPE html>
@@ -129,11 +131,11 @@ githubRouter.get(
                     token: ${JSON.stringify(token)}, 
                     projectId: ${JSON.stringify(projectId)} 
                   },
-                  ${JSON.stringify(config.corsOrigin)}
+                  ${JSON.stringify(primaryOrigin)}
                 );
                 setTimeout(() => window.close(), 1000);
               } else {
-                window.location.href = ${JSON.stringify(config.corsOrigin + '/dashboard/settings?tab=integrations&github_auth=connected')};
+                window.location.href = ${JSON.stringify(primaryOrigin + '/dashboard/settings?tab=integrations&github_auth=connected')};
               }
             </script>
           </body>

@@ -27,6 +27,7 @@ export const config = {
 
   port: parseInt(process.env.PORT || "4000", 10),
   nodeEnv: process.env.NODE_ENV || "development",
+  isProduction: process.env.NODE_ENV === "production",
 
   // JWT — uses env var or stable development key
   jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? crypto.randomBytes(64).toString("hex") : stableDevSecret),
@@ -53,6 +54,7 @@ export const config = {
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || "",
   githubCallbackUrl: process.env.GITHUB_CALLBACK_URL || "http://localhost:4000/api/github/oauth/callback",
   githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || "devflow-webhook-secret",
+  paymentWebhookSecret: process.env.PAYMENT_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "devflow-payment-webhook-secret",
   encryptionKey: process.env.ENCRYPTION_KEY || "devflow-default-encryption-secret-key-32b",
 
   // Storage & Attachments

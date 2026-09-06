@@ -394,14 +394,54 @@ export class IssueService {
 
     const { labelIds, ...issueData } = updateData;
 
+    // Mass assignment protection: allowlist safe editable fields only
+    const safeIssueData: Record<string, any> = {};
+    if (typeof issueData.title === "string" && issueData.title.trim().length > 0) {
+      safeIssueData.title = issueData.title.trim();
+    }
+    if (typeof issueData.description !== "undefined") {
+      safeIssueData.description = issueData.description;
+    }
+    if (typeof issueData.type === "string") {
+      safeIssueData.type = issueData.type;
+    }
+    if (typeof issueData.status === "string") {
+      safeIssueData.status = issueData.status;
+    }
+    if (typeof issueData.priority === "string") {
+      safeIssueData.priority = issueData.priority;
+    }
+    if (typeof issueData.storyPoints !== "undefined") {
+      safeIssueData.storyPoints = issueData.storyPoints;
+    }
+    if (typeof issueData.dueDate !== "undefined") {
+      safeIssueData.dueDate = issueData.dueDate ? new Date(issueData.dueDate) : null;
+    }
+    if (typeof issueData.position === "number") {
+      safeIssueData.position = issueData.position;
+    }
+    if (typeof issueData.assigneeId !== "undefined") {
+      safeIssueData.assigneeId = issueData.assigneeId || null;
+    }
+    if (typeof issueData.sprintId !== "undefined") {
+      safeIssueData.sprintId = issueData.sprintId || null;
+    }
+    if (typeof issueData.parentId !== "undefined") {
+      safeIssueData.parentId = issueData.parentId || null;
+    }
+    if (typeof issueData.estimatedHours !== "undefined") {
+      safeIssueData.estimatedHours = issueData.estimatedHours;
+    }
+    if (typeof issueData.loggedHours !== "undefined") {
+      safeIssueData.loggedHours = issueData.loggedHours;
+    }
+    if (typeof issueData.aiAnalysis !== "undefined") {
+      safeIssueData.aiAnalysis = typeof issueData.aiAnalysis === "string" ? issueData.aiAnalysis : JSON.stringify(issueData.aiAnalysis);
+    }
+
     const issue = await prisma.issue.update({
       where: { id: actualId },
-      data: {
-        ...issueData,
-        ...(issueData.dueDate && {
-          dueDate: new Date(issueData.dueDate),
-        }),
-      },
+      data: safeIssueData,
       include: {
         assignee: {
           select: { id: true, name: true, avatar: true },
@@ -458,11 +498,17 @@ export class IssueService {
       throw createError("Issue not found", 404);
     }
 
+    const validStatuses = ["BACKLOG", "TODO", "IN_PROGRESS", "IN_REVIEW", "TESTING", "DONE"];
+    if (status && !validStatuses.includes(status)) {
+      throw createError(`Invalid status: ${status}. Must be one of: ${validStatuses.join(", ")}`, 400);
+    }
+    const safePosition = typeof position === "number" && position >= 0 ? Math.floor(position) : 0;
+
     const actualId = oldIssue.id;
 
     const issue = await prisma.issue.update({
       where: { id: actualId },
-      data: { status, position },
+      data: { status: status || oldIssue.status, position: safePosition },
       include: {
         assignee: {
           select: { id: true, name: true, avatar: true },

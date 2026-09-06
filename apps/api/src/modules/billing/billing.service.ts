@@ -359,14 +359,25 @@ export class BillingService {
    */
   static verifyWebhookSignature(rawBody: Buffer, signature: string | undefined, secret?: string): boolean {
     if (!signature) return false;
-    const webhookSecret = secret || config.jwtSecret;
-    const expected = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
     const cleanedSig = signature.replace(/^v1=/, "").replace(/^sha256=/, "");
-    
     const sigBuffer = Buffer.from(cleanedSig);
-    const expectedBuffer = Buffer.from(expected);
-    if (sigBuffer.length !== expectedBuffer.length) return false;
-    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+
+    const candidateSecrets = [
+      secret,
+      process.env.STRIPE_WEBHOOK_SECRET,
+      process.env.PAYMENT_WEBHOOK_SECRET,
+      config.paymentWebhookSecret,
+      config.jwtSecret,
+    ].filter((s): s is string => Boolean(s));
+
+    for (const s of candidateSecrets) {
+      const expected = crypto.createHmac("sha256", s).update(rawBody).digest("hex");
+      const expectedBuffer = Buffer.from(expected);
+      if (sigBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

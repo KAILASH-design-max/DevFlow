@@ -96,9 +96,18 @@ export class ProjectService {
       throw createError("Project not found", 404);
     }
 
+    // Mass assignment prevention: allowlist safe fields only
+    const safeData: { name?: string; description?: string } = {};
+    if (typeof data.name === "string" && data.name.trim().length > 0) {
+      safeData.name = data.name.trim();
+    }
+    if (typeof data.description !== "undefined") {
+      safeData.description = data.description;
+    }
+
     return prisma.project.update({
       where: { id: projectId },
-      data,
+      data: safeData,
     });
   }
 

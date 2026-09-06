@@ -29,8 +29,16 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/x-zip-compressed",
 ]);
 
+// Explicitly blocked dangerous executable file extensions
+const BLOCKED_EXTENSIONS = new Set([
+  "exe", "dll", "so", "dylib", "bin", "bat", "cmd", "sh", "bash", "ps1", "vbs",
+  "js", "mjs", "cjs", "jsx", "ts", "tsx", "php", "phtml", "jsp", "asp", "aspx",
+  "cgi", "pl", "py", "html", "htm", "shtml", "hta", "msi", "scr", "jar", "wsf"
+]);
+
 /**
  * Lightweight multipart/form-data buffer parser for resilient zero-config uploads
+ * Hardened with real-time stream byte counting to prevent memory exhaustion DoS
  */
 function parseMultipartBuffer(req: Request): Promise<{ buffer: Buffer; filename: string; mimetype: string }> {
   return new Promise((resolve, reject) => {
@@ -39,12 +47,24 @@ function parseMultipartBuffer(req: Request): Promise<{ buffer: Buffer; filename:
       return reject(createError("Content-Type must be multipart/form-data", 400));
     }
 
+    const maxAllowedUploadBytes = (config.maxFileSizeMb * 1024 * 1024) + (64 * 1024);
+    let totalBytes = 0;
     const chunks: Buffer[] = [];
+    let aborted = false;
+
     req.on("data", (chunk) => {
+      if (aborted) return;
+      totalBytes += chunk.length;
+      if (totalBytes > maxAllowedUploadBytes) {
+        aborted = true;
+        req.destroy();
+        return reject(createError(`File size exceeds maximum allowed limit of ${config.maxFileSizeMb}MB`, 413));
+      }
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
     req.on("end", () => {
+      if (aborted) return;
       const fullBuffer = Buffer.concat(chunks);
       const boundaryMatch = contentType.match(/boundary=(?:["']?([^"';]+)["']?)/);
       if (!boundaryMatch) {
@@ -87,7 +107,9 @@ function parseMultipartBuffer(req: Request): Promise<{ buffer: Buffer; filename:
       });
     });
 
-    req.on("error", (err) => reject(err));
+    req.on("error", (err) => {
+      if (!aborted) reject(err);
+    });
   });
 }
 
@@ -117,13 +139,19 @@ attachmentRouter.post(
         throw createError(`File size exceeds maximum allowed limit of ${config.maxFileSizeMb}MB`, 400);
       }
 
+      // Sanitize and check filename
+      const rawFilename = parsedFile.filename.replace(/[/\\?%*:|"<>]/g, "-").slice(0, 100);
+      const ext = rawFilename.split(".").pop()?.toLowerCase() || "";
+      if (BLOCKED_EXTENSIONS.has(ext)) {
+        throw createError(`File extension .${ext} is forbidden for security reasons`, 400);
+      }
+
       // Validate MIME type against whitelist
       if (!ALLOWED_MIME_TYPES.has(parsedFile.mimetype.toLowerCase())) {
-        const ext = parsedFile.filename.split(".").pop()?.toLowerCase();
         const allowedExts = ["png","jpg","jpeg","gif","webp","svg","txt","log","json","csv","pdf","zip"];
         if (!ext || !allowedExts.includes(ext)) {
           throw createError(
-            `Unsupported file type (${parsedFile.mimetype}). Allowed types: images, logs, text, JSON, CSV, PDF.`,
+            `Unsupported file type (${parsedFile.mimetype}). Allowed types: images, logs, text, JSON, CSV, PDF, ZIP.`,
             400
           );
         }
@@ -131,7 +159,7 @@ attachmentRouter.post(
 
       const result = await AttachmentService.uploadAttachment(userId, issueId as string, {
         buffer: parsedFile.buffer,
-        originalname: parsedFile.filename,
+        originalname: rawFilename,
         mimetype: parsedFile.mimetype,
         size: parsedFile.buffer.length,
       });

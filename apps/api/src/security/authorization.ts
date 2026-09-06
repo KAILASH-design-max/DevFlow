@@ -16,16 +16,24 @@ export async function verifyWorkspaceMembership(
     throw createError("Workspace ID is required", 400);
   }
 
-  const member = await prisma.workspaceMember.findUnique({
-    where: {
-      userId_workspaceId: {
-        userId,
-        workspaceId,
+  const [member, workspace] = await Promise.all([
+    prisma.workspaceMember.findUnique({
+      where: {
+        userId_workspaceId: {
+          userId,
+          workspaceId,
+        },
       },
-    },
-  });
+    }),
+    prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, ownerId: true },
+    }),
+  ]);
 
-  if (!member) {
+  const isOwner = workspace?.ownerId === userId;
+
+  if (!member && !isOwner) {
     await SecurityEventLogger.log({
       userId,
       workspaceId,
@@ -35,14 +43,20 @@ export async function verifyWorkspaceMembership(
     throw createError("Not a member of this workspace", 403);
   }
 
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(member.role)) {
-    throw createError(
-      `Insufficient permissions. Required role: ${allowedRoles.join(", ")}`,
-      403
-    );
+  if (allowedRoles && allowedRoles.length > 0) {
+    const isAllowed =
+      (isOwner && (allowedRoles.includes("OWNER") || allowedRoles.includes("ADMIN"))) ||
+      (member && allowedRoles.includes(member.role));
+
+    if (!isAllowed) {
+      throw createError(
+        `Insufficient permissions. Required role: ${allowedRoles.join(", ")}`,
+        403
+      );
+    }
   }
 
-  return member;
+  return member || ({ id: `owner_${userId}`, userId, workspaceId, role: "ADMIN" } as any);
 }
 
 /**

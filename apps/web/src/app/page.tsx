@@ -20,6 +20,7 @@ import {
   RotateCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { ThemeToggle } from "../components/ThemeToggle";
 
 function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
@@ -73,14 +74,14 @@ function FeatureList() {
       {features.map((feature, idx) => (
         <div
           key={idx}
-          className="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/80 border border-slate-200/80 shadow-2xs transition-all hover:bg-white"
+          className="flex items-start gap-3.5 p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 shadow-2xs transition-all hover:bg-white dark:hover:bg-slate-900"
         >
-          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 shrink-0">
+          <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shrink-0">
             {feature.icon}
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-slate-900">{feature.title}</h4>
-            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{feature.desc}</p>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">{feature.title}</h4>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">{feature.desc}</p>
           </div>
         </div>
       ))}
@@ -90,14 +91,14 @@ function FeatureList() {
 
 function MarketingPanel() {
   return (
-    <aside className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-50/50 via-slate-50 to-white p-12 xl:p-16 flex-col justify-between border-r border-slate-200 relative overflow-hidden">
+    <aside className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-50/50 via-slate-50 to-white dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 p-12 xl:p-16 flex-col justify-between border-r border-slate-200 dark:border-slate-800 relative overflow-hidden">
       {/* Brand */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200 dark:shadow-none">
           <Layers className="w-5 h-5 text-white" />
         </div>
         <div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
+          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
             DevFlow
           </span>
         </div>
@@ -105,15 +106,15 @@ function MarketingPanel() {
 
       {/* Main Pitch */}
       <div className="max-w-md my-auto py-8">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-4">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold mb-4">
           <Sparkles className="w-3.5 h-3.5" />
           <span>Next-Gen AI Issue Tracker</span>
         </div>
 
-        <h2 className="text-3xl xl:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight mb-3">
+        <h2 className="text-3xl xl:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight mb-3">
           Intelligent issue tracking for modern teams.
         </h2>
-        <p className="text-sm text-slate-600 leading-relaxed mb-6">
+        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
           Sign in seamlessly with Google or 6-digit Email OTP. Synchronize your teams, sprints, and tasks across devices in real time.
         </p>
 
@@ -122,13 +123,13 @@ function MarketingPanel() {
       </div>
 
       {/* Footer Info */}
-      <div className="flex items-center justify-between text-xs text-slate-500 pt-4 border-t border-slate-200/60">
+      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-4 border-t border-slate-200/60 dark:border-slate-800">
         <span>©2026 DevFlow India.</span>
         <div className="flex items-center gap-3">
-          <Link href="/legal/privacy" className="hover:text-indigo-600 transition-colors">
+          <Link href="/legal/privacy" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
             Privacy
           </Link>
-          <Link href="/legal/terms" className="hover:text-indigo-600 transition-colors">
+          <Link href="/legal/terms" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
             Terms
           </Link>
         </div>
@@ -164,11 +165,11 @@ function InputField({
 }: InputFieldProps) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
         {label}
       </label>
       <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
           {icon}
         </div>
         <input
@@ -178,7 +179,7 @@ function InputField({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className="block w-full pl-10 pr-10 py-2.5 bg-white border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition disabled:opacity-50 text-sm"
+          className="block w-full pl-10 pr-10 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition disabled:opacity-50 text-sm"
         />
         {rightIcon && (
           <button
@@ -478,22 +479,27 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 text-slate-900 flex flex-col lg:flex-row antialiased">
+    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col lg:flex-row antialiased relative">
+      {/* Top right theme toggle */}
+      <div className="absolute top-4 right-4 z-50">
+        <ThemeToggle variant="dropdown" />
+      </div>
+
       {/* Left Marketing Panel */}
       <MarketingPanel />
 
       {/* Right Authentication Panel */}
-      <main className="w-full lg:w-1/2 min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8 sm:px-8 lg:px-12">
+      <main className="w-full lg:w-1/2 min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-8 sm:px-8 lg:px-12">
         <div className="w-full max-w-md animate-fade-in">
           {/* Main Auth Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-xl">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-xl">
             {/* Header */}
             <div className="mb-6">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white lg:hidden">
                   <Layers className="w-4 h-4 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
                   {isOtpMode
                     ? "Verify Your Email"
                     : isSignup
@@ -501,7 +507,7 @@ export default function HomePage() {
                     : "Sign in with OTP"}
                 </h2>
               </div>
-              <p className="text-slate-600 text-sm">
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
                 {isOtpMode
                   ? `Enter the 6-digit code sent to ${email}`
                   : isSignup
@@ -517,7 +523,7 @@ export default function HomePage() {
                   type="button"
                   onClick={handleGoogleSignIn}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 shadow-2xs hover:shadow-xs transition-all disabled:opacity-50 cursor-pointer mb-5"
+                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-700 shadow-2xs hover:shadow-xs transition-all disabled:opacity-50 cursor-pointer mb-5"
                 >
                   <GoogleIcon className="w-5 h-5" />
                   <span>Continue with Google</span>
@@ -525,11 +531,11 @@ export default function HomePage() {
 
                 {/* Divider */}
                 <div className="relative flex items-center justify-center mb-5">
-                  <div className="border-t border-slate-200 w-full" />
-                  <span className="bg-white px-3 text-xs uppercase tracking-wider text-slate-400 font-medium shrink-0">
+                  <div className="border-t border-slate-200 dark:border-slate-800 w-full" />
+                  <span className="bg-white dark:bg-slate-900 px-3 text-xs uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium shrink-0">
                     Or continue with email
                   </span>
-                  <div className="border-t border-slate-200 w-full" />
+                  <div className="border-t border-slate-200 dark:border-slate-800 w-full" />
                 </div>
               </>
             )}
@@ -696,12 +702,12 @@ export default function HomePage() {
                     <>
                       {isSignup ? (
                         <>
-                          <span>Verify with OTP & Sign Up</span>
+                          <span>Sign Up</span>
                           <KeyRound className="w-4 h-4" />
                         </>
                       ) : (
                         <>
-                          <span>Send Sign-In Code</span>
+                          <span>Sign -in</span>
                           <ArrowRight className="w-4 h-4" />
                         </>
                       )}
