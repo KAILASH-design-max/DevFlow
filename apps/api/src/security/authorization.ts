@@ -125,17 +125,6 @@ export async function verifyIssueAccess(
   }
 
   if (!issue) {
-    const numMatch = issueId.match(/\d+/);
-    if (numMatch) {
-      const num = parseInt(numMatch[0], 10);
-      issue = await prisma.issue.findFirst({
-        where: { number: num },
-        select: { id: true, projectId: true, reporterId: true },
-      });
-    }
-  }
-
-  if (!issue) {
     throw createError("Issue not found", 404);
   }
 

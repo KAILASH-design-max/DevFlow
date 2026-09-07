@@ -261,10 +261,16 @@ authRouter.post(
   }
 );
 
-// ─── Ephemeral Test Inbox (Testing & CI Hook — Disabled in Production) ───
+// ─── Ephemeral Test Inbox (Testing & CI Hook — Disabled in Production & Non-Localhost) ───
 authRouter.get("/otp/test-inbox", (req: Request, res: Response) => {
   if (config.nodeEnv === "production") {
     return res.status(404).json({ success: false, message: "Not found" });
+  }
+  // Security: Only allow test inbox from localhost to prevent OTP leakage in staging
+  const clientIp = req.ip || req.socket?.remoteAddress || "";
+  const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
+  if (!isLocalhost) {
+    return res.status(403).json({ success: false, message: "Test inbox is only accessible from localhost" });
   }
   const email = (req.query.email as string)?.trim().toLowerCase();
   const code = email ? EmailService.getTestOtp(email) : undefined;
@@ -277,7 +283,11 @@ authRouter.post(
   validate(registerSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { user, tokens } = await AuthService.register(req.body);
+      const { user, tokens } = await AuthService.register({
+        ...req.body,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
 
       res.cookie("accessToken", tokens.accessToken, {
         httpOnly: true,
@@ -312,7 +322,11 @@ authRouter.post(
   validate(loginSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { user, tokens } = await AuthService.login(req.body);
+      const { user, tokens } = await AuthService.login({
+        ...req.body,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+      });
 
       res.cookie("accessToken", tokens.accessToken, {
         httpOnly: true,

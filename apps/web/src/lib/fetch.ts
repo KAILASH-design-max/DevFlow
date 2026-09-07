@@ -21,27 +21,12 @@ let inMemoryAccessToken: string | null = null;
 
 export function setInMemoryAccessToken(token: string | null) {
   inMemoryAccessToken = token;
-  if (typeof window !== "undefined") {
-    if (token) {
-      sessionStorage.setItem("accessToken", token);
-      localStorage.setItem("accessToken", token);
-    } else {
-      sessionStorage.removeItem("accessToken");
-      localStorage.removeItem("accessToken");
-    }
-  }
+  // Security: Tokens are only stored in-memory and httpOnly cookies.
+  // Never persist JWTs to localStorage/sessionStorage (XSS-extractable).
 }
 
 export function getInMemoryAccessToken(): string | null {
-  if (inMemoryAccessToken) return inMemoryAccessToken;
-  if (typeof window !== "undefined") {
-    const stored = sessionStorage.getItem("accessToken") || localStorage.getItem("accessToken");
-    if (stored) {
-      inMemoryAccessToken = stored;
-      return stored;
-    }
-  }
-  return null;
+  return inMemoryAccessToken;
 }
 
 export interface FetchWithAuthOptions extends RequestInit {
@@ -67,13 +52,7 @@ export async function fetchWithAuth<T = any>(
     // 1. In-memory or session-stored access token
     let token: string | null = getInMemoryAccessToken();
 
-    // 2. Check localStorage if in-memory is missing
-    if (!token && typeof window !== "undefined") {
-      token = localStorage.getItem("accessToken") || sessionStorage.getItem("accessToken") || null;
-      if (token) setInMemoryAccessToken(token);
-    }
-
-    // 3. Prefer fresh Firebase ID token if available
+    // 2. Prefer fresh Firebase ID token if available
     if (!token) {
       try {
         const currentUser = auth.currentUser;
@@ -86,30 +65,24 @@ export async function fetchWithAuth<T = any>(
       }
     }
 
-    // 4. Proactive refresh: If token is still missing, try refreshing via stored refreshToken
-    if (!token && typeof window !== "undefined") {
-      const storedRefreshToken = localStorage.getItem("refreshToken");
-      if (storedRefreshToken) {
-        try {
-          const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken: storedRefreshToken }),
-            credentials: "include",
-          });
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json();
-            if (refreshData.data?.accessToken) {
-              token = refreshData.data.accessToken;
-              setInMemoryAccessToken(token);
-              if (refreshData.data?.refreshToken) {
-                localStorage.setItem("refreshToken", refreshData.data.refreshToken);
-              }
-            }
+    // 3. Proactive refresh: If token is still missing, try cookie-based refresh
+    // Security: Refresh tokens are only transported via httpOnly cookies.
+    if (!token) {
+      try {
+        const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        });
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData.data?.accessToken) {
+            token = refreshData.data.accessToken;
+            setInMemoryAccessToken(token);
           }
-        } catch (refreshErr) {
-          console.warn("Proactive token refresh error:", refreshErr);
         }
+      } catch (refreshErr) {
+        console.warn("Proactive token refresh error:", refreshErr);
       }
     }
 
@@ -161,12 +134,11 @@ export async function fetchWithAuth<T = any>(
           // Firebase refresh failed
         }
 
-        const storedRefreshToken = typeof window !== "undefined" ? localStorage.getItem("refreshToken") : null;
-        if (storedRefreshToken) {
+        // Security: Refresh tokens are sent via httpOnly cookies only (credentials: "include").
+        try {
           const refreshRes = await fetch(`${API_BASE}/api/auth/refresh`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken: storedRefreshToken }),
             credentials: "include",
           });
 
@@ -174,9 +146,6 @@ export async function fetchWithAuth<T = any>(
             const refreshData = await refreshRes.json();
             if (refreshData.data?.accessToken) {
               setInMemoryAccessToken(refreshData.data.accessToken);
-              if (refreshData.data?.refreshToken && typeof window !== "undefined") {
-                localStorage.setItem("refreshToken", refreshData.data.refreshToken);
-              }
               headers["Authorization"] = `Bearer ${refreshData.data.accessToken}`;
 
               res = await fetch(url, {
@@ -189,6 +158,8 @@ export async function fetchWithAuth<T = any>(
           } else {
             setInMemoryAccessToken(null);
           }
+        } catch {
+          setInMemoryAccessToken(null);
         }
       }
 

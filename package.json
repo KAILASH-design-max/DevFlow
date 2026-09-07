@@ -24,7 +24,8 @@
     "cli:build": "pnpm --filter @devflow/cli run build",
     "cli:dev": "pnpm --filter @devflow/cli run dev",
     "cli:link": "pnpm --filter @devflow/cli link --global",
-    "cli:run": "node apps/cli/dist/index.js"
+    "cli:run": "node apps/cli/dist/index.js",
+    "check:readiness": "pnpm --filter @devflow/api exec tsx src/scripts/checkReadiness.ts"
   },
   "devDependencies": {
     "@neon/config": "^1.1.0",

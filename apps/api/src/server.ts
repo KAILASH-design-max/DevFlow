@@ -12,6 +12,7 @@ import rateLimit from "express-rate-limit";
 import { config } from "./config/index.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
+import { AuthService } from "./modules/auth/auth.service.js";
 import { workspaceRouter } from "./modules/workspaces/workspace.routes.js";
 import { projectRouter } from "./modules/projects/project.routes.js";
 import { issueRouter } from "./modules/issues/issue.routes.js";
@@ -32,6 +33,7 @@ import crypto from "crypto";
 import { StorageService } from "./services/storage.service.js";
 import { prisma } from "@devflow/database";
 import { idempotencyMiddleware } from "./middleware/idempotency.js";
+import { ReadinessValidator } from "./config/readiness.js";
 
 const app = express();
 
@@ -100,10 +102,18 @@ const corsOptions: cors.CorsOptions = {
       return callback(null, true);
     }
 
-    // 4. Automatically allow all Vercel deployments (production, branch preview, PR preview)
+    // 4. Automatically allow DevFlow Vercel deployments (restrict to project-specific subdomains)
     try {
       const url = new URL(requestOrigin);
-      if (url.hostname.endsWith(".vercel.app") || url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return callback(null, true);
+      }
+      // Only allow Vercel subdomains matching the DevFlow project pattern
+      // e.g., devflow-*.vercel.app or specific preview deployments
+      if (
+        url.hostname.endsWith(".vercel.app") &&
+        (url.hostname.startsWith("devflow") || url.hostname.includes("-devflow-"))
+      ) {
         return callback(null, true);
       }
     } catch {
@@ -193,19 +203,50 @@ const authLimiter = rateLimit({
 });
 
 // ─────────────────────────────────────────────
-// Health Check (Safe production health probes)
+// Health & Readiness Checks (Safe production probes)
 // ─────────────────────────────────────────────
 
-app.get("/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+app.get("/health", async (_req, res) => {
+  let dbStatus = "connected";
+  let isHealthy = true;
+  let dbLatencyMs = 0;
+
+  try {
+    const start = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    dbLatencyMs = Date.now() - start;
+  } catch {
+    dbStatus = "disconnected";
+    isHealthy = false;
+  }
+
+  const mem = process.memoryUsage();
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "ok" : "degraded",
+    database: dbStatus,
+    databaseLatencyMs: dbLatencyMs,
+    environment: config.nodeEnv,
+    version: "1.0.0",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    memory: {
+      rssMb: Math.round(mem.rss / (1024 * 1024)),
+      heapUsedMb: Math.round(mem.heapUsed / (1024 * 1024)),
+    },
+  });
 });
 
 app.get("/api/health", async (_req, res) => {
   let dbStatus = "connected";
   let isHealthy = true;
+  let dbLatencyMs = 0;
+
   try {
+    const start = Date.now();
     await prisma.$queryRaw`SELECT 1`;
-  } catch (e) {
+    dbLatencyMs = Date.now() - start;
+  } catch {
     dbStatus = "disconnected";
     isHealthy = false;
   }
@@ -214,10 +255,27 @@ app.get("/api/health", async (_req, res) => {
     success: isHealthy,
     message: isHealthy ? "DevFlow API is running" : "DevFlow API database disconnected",
     database: dbStatus,
+    databaseLatencyMs: dbLatencyMs,
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     uptime: Math.floor(process.uptime()),
   });
+});
+
+app.get("/api/readiness", async (_req, res) => {
+  try {
+    const report = await ReadinessValidator.check();
+    res.status(report.overallStatus === "critical" ? 503 : 200).json({
+      success: report.overallStatus !== "critical",
+      data: report,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to evaluate system readiness",
+      message: err?.message,
+    });
+  }
 });
 
 app.get("/", (_req, res) => {
@@ -226,6 +284,7 @@ app.get("/", (_req, res) => {
     message: "DevFlow REST API Server",
     status: "ok",
     healthCheck: "/health",
+    readinessCheck: "/api/readiness",
   });
 });
 
@@ -307,6 +366,22 @@ if (!process.env.VERCEL) {
   ║     Rate: ${String(config.rateLimitMax + " req/" + config.rateLimitWindowMs / 1000 + "s").padEnd(28)}║
   ╚═══════════════════════════════════════════╝
     `);
+
+    ReadinessValidator.check()
+      .then(ReadinessValidator.printBanner)
+      .catch((err) => console.warn("Notice: Readiness check error:", err?.message));
+
+    // Periodic cleanup of expired refresh tokens (runs on start and every 12h - M4 fix)
+    AuthService.cleanupExpiredTokens()
+      .then((count) => {
+        if (count > 0) console.log(`🧹 Cleaned up ${count} expired refresh token(s).`);
+      })
+      .catch(() => {});
+
+    const tokenCleanupInterval = setInterval(() => {
+      AuthService.cleanupExpiredTokens().catch(() => {});
+    }, 12 * 60 * 60 * 1000);
+    tokenCleanupInterval.unref();
   });
 
   const gracefulShutdown = (signal: string) => {

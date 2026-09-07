@@ -2,18 +2,37 @@ import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { v4 as uuid } from "uuid";
 import crypto from "crypto";
+import UAParser from "ua-parser-js";
 import { prisma } from "@devflow/database";
 import { config } from "../../config/index.js";
 import { createError } from "../../middleware/errorHandler.js";
 import { generateBase32Secret, verifyTotpCode } from "../../utils/totp.js";
 import { LocalQrCode } from "../../utils/qr.js";
 
+/**
+ * Parse User-Agent string into session metadata
+ */
+function parseSessionMetadata(ip?: string, userAgent?: string) {
+  const parsed = (UAParser as any)(userAgent || "");
+  const browser = parsed.browser || {};
+  const os = parsed.os || {};
+  const device = parsed.device || {};
+
+  return {
+    device: device.model || device.vendor || (device.type === "mobile" ? "Mobile" : "Desktop"),
+    browser: browser.name ? `${browser.name} ${browser.major || ""}`.trim() : "Unknown",
+    os: os.name ? `${os.name} ${os.version || ""}`.trim() : "Unknown",
+    ip: ip || "unknown",
+    location: "Unknown",
+  };
+}
+
 export class AuthService {
   /**
    * Register a new user and issue token pair
    */
-  static async register(data: { email: string; password: string; name: string }) {
-    const { email, password, name } = data;
+  static async register(data: { email: string; password: string; name: string; ip?: string; userAgent?: string }) {
+    const { email, password, name, ip, userAgent } = data;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -40,14 +59,16 @@ export class AuthService {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
+
+    const session = parseSessionMetadata(ip, userAgent);
     await prisma.session.create({
       data: {
         userId: user.id,
-        device: "Desktop PC",
-        browser: "Chrome",
-        os: "Windows",
-        ip: "127.0.0.1",
-        location: "Unknown",
+        device: session.device,
+        browser: session.browser,
+        os: session.os,
+        ip: session.ip,
+        location: session.location,
         isCurrent: true,
       },
     });
@@ -58,8 +79,8 @@ export class AuthService {
   /**
    * Authenticate credentials and issue token pair
    */
-  static async login(data: { email: string; password: string; code?: string }) {
-    const { email, password, code } = data;
+  static async login(data: { email: string; password: string; code?: string; ip?: string; userAgent?: string }) {
+    const { email, password, code, ip, userAgent } = data;
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -131,14 +152,15 @@ export class AuthService {
       },
     });
 
+    const session = parseSessionMetadata(ip, userAgent);
     await prisma.session.create({
       data: {
         userId: user.id,
-        device: "Desktop PC",
-        browser: "Chrome",
-        os: "Windows",
-        ip: "127.0.0.1",
-        location: "Unknown",
+        device: session.device,
+        browser: session.browser,
+        os: session.os,
+        ip: session.ip,
+        location: session.location,
         isCurrent: true,
       },
     });
@@ -225,6 +247,21 @@ export class AuthService {
         where: { userId, isCurrent: true },
         data: { isCurrent: false },
       }).catch(() => {});
+    }
+  }
+
+  /**
+   * Cleanup expired refresh tokens from the database (prevents unbounded DB growth - M4 fix)
+   */
+  static async cleanupExpiredTokens(): Promise<number> {
+    try {
+      const result = await prisma.refreshToken.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      return result.count;
+    } catch (err) {
+      console.warn("Expired token cleanup error:", err);
+      return 0;
     }
   }
 
@@ -447,6 +484,9 @@ export class AuthService {
 
     if (data.newPassword.length < 8) {
       throw createError("New password must be at least 8 characters long", 400);
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(data.newPassword)) {
+      throw createError("Password must contain at least one uppercase letter, one lowercase letter, and one number", 400);
     }
 
     const hashedPassword = await argon2.hash(data.newPassword, {

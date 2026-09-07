@@ -184,23 +184,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (fbErr: any) {
       console.warn("Firebase email sign-in notice:", fbErr?.code || fbErr?.message);
 
-      // If user not yet created in Firebase project, auto-create
-      if (
-        fbErr?.code === "auth/user-not-found" ||
-        fbErr?.code === "auth/invalid-credential"
-      ) {
-        try {
-          const newCred = await createUserWithEmailAndPassword(auth, email, password);
-          if (newCred.user) {
-            const name = email.split("@")[0].replace(/[^a-zA-Z0-9]/g, " ");
-            await updateProfile(newCred.user, { displayName: name });
-            await syncUserProfile(newCred.user, { name });
-            return;
-          }
-        } catch {
-          // Continue to fallback
-        }
-      }
+      // Security: Do NOT auto-create Firebase accounts on failed sign-in.
+      // Invalid credentials should surface as errors, not silently create
+      // ghost accounts (which bypasses OTP verification and email checks).
 
       // Backend API fallback (non-Firebase JWT auth)
       const res = await authApi.login(email, password);
@@ -329,10 +315,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setFirebaseUser(null);
     if (typeof window !== "undefined") {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
+      // Security: Only clear user profile from localStorage.
+      // Tokens are in-memory only; refresh tokens are httpOnly cookies (cleared by the server).
       localStorage.removeItem("user");
-      sessionStorage.removeItem("accessToken");
     }
   };
 
@@ -410,9 +395,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { user: apiUser, accessToken, refreshToken, customToken } = res.data;
     setInMemoryAccessToken(accessToken);
-    if (refreshToken && typeof window !== "undefined") {
-      localStorage.setItem("refreshToken", refreshToken);
-    }
+    // Security: refreshToken is set as httpOnly cookie by the server, not stored in localStorage.
     if (customToken) {
       try {
         await signInWithCustomToken(auth, customToken);
@@ -452,11 +435,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(res.error || "Invalid verification code");
     }
 
-    const { user: apiUser, accessToken, refreshToken, customToken } = res.data;
+    const { user: apiUser, accessToken, customToken } = res.data;
     setInMemoryAccessToken(accessToken);
-    if (refreshToken && typeof window !== "undefined") {
-      localStorage.setItem("refreshToken", refreshToken);
-    }
+    // Security: refreshToken is set as httpOnly cookie by the server, not stored in localStorage.
     if (customToken) {
       try {
         await signInWithCustomToken(auth, customToken);

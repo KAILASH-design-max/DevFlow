@@ -712,6 +712,9 @@ export class OtpService {
     if (!newPassword || newPassword.length < 8) {
       throw createError("New password must be at least 8 characters long", 400);
     }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
+      throw createError("Password must contain at least one uppercase letter, one lowercase letter, and one number", 400);
+    }
 
     if (!code || code.trim().length !== 6 || !/^\d{6}$/.test(code.trim())) {
       throw createError("Verification code must be exactly 6 numeric digits", 400);

@@ -76,6 +76,9 @@ if (!process.env.JWT_SECRET) {
 }
 
 if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY === "devflow-default-encryption-secret-key-32b") {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("🚨 CRITICAL: ENCRYPTION_KEY must be explicitly set in production! Using the default key is not secure.");
+  }
   console.warn(
     "⚠️  WARNING: ENCRYPTION_KEY is not set in environment. Using default encryption key."
   );

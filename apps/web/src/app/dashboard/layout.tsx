@@ -20,7 +20,6 @@ import {
   Command,
   X,
   ArrowRight,
-  UserCheck,
   Check,
   ChevronDown,
   Layers,
@@ -407,17 +406,9 @@ export default function DashboardLayout({
     router.replace("/");
   };
 
-  const handleSwitchUser = (selected: any) => {
-    const updated = {
-      id: selected.id,
-      name: selected.name,
-      email: selected.email,
-      role: selected.role,
-    };
-    localStorage.setItem("user", JSON.stringify(updated));
-    setUser(updated);
-    setIsUserMenuOpen(false);
-  };
+  // Security: Client-side user switching has been removed.
+  // It allowed UI impersonation of other workspace members without re-authenticating.
+  // To switch users, sign out and sign in with the other account.
 
   const quickNavItems = [
     { label: "Dashboard Overview", href: "/dashboard", icon: LayoutDashboard },
@@ -848,29 +839,6 @@ export default function DashboardLayout({
                     </div>
                   </div>
 
-                  <div className="py-1">
-                    <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 font-bold">
-                      Switch Profile Role (RBAC)
-                    </div>
-                    {workspaceMembers.map((m) => {
-                      const u = m.user;
-                      if (!u) return null;
-                      return (
-                      <button
-                        key={u.id}
-                        onClick={() => handleSwitchUser(u)}
-                        className={`w-full px-4 py-2 text-left flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
-                          user.email === u.email ? "text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50/50 dark:bg-indigo-950/40" : "text-slate-700 dark:text-slate-300"
-                        }`}
-                      >
-                        <div className="flex-1 truncate">
-                          <span className="block truncate font-medium">{u.name}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">{m.role}</span>
-                        </div>
-                        {user.email === u.email && <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
-                      </button>
-                    )})}
-                  </div>
 
                   <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
                     <button

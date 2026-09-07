@@ -7,6 +7,7 @@
     "serve": "tsx src/server.ts",
     "build": "pnpm --filter @devflow/database db:generate && tsc",
     "start": "tsx dist/server.js",
+    "readiness": "tsx src/scripts/checkReadiness.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,9 +27,10 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^9.1.1",
+    "tsx": "^4.19.0",
+    "ua-parser-js": "^2.0.10",
     "uuid": "^11.0.0",
-    "zod": "^3.24.0",
-    "tsx": "^4.19.0"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@devflow/tsconfig": "workspace:*",
@@ -39,6 +41,7 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.12",
     "@types/nodemailer": "^8.0.1",
+    "@types/ua-parser-js": "^0.7.39",
     "@types/uuid": "^10.0.0",
     "typescript": "^5.6.0"
   }
