@@ -33,7 +33,7 @@ export default function OfflinePage() {
       ).replace(/\/+$/, "");
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
       fetch(`${apiBase}/health`, {
         method: "GET",
@@ -65,7 +65,7 @@ export default function OfflinePage() {
     ).replace(/\/+$/, "");
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     let ok = false;
     try {

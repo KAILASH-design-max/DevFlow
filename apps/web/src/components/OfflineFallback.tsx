@@ -149,7 +149,7 @@ export function OfflineFallback({
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
         ).replace(/\/+$/, "");
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         let ok = false;
         try {

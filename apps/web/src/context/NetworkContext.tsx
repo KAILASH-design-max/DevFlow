@@ -52,7 +52,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
     const start = performance.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     try {
       const res = await fetch(`${API_BASE}/health`, {
@@ -68,6 +68,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         setLastOnlineAt(new Date());
         backoffDelayRef.current = 3000;
+        setIsOffline(false); // CRITICAL: Reset offline overlay state on successful reachability
 
         if (duration > 1800) {
           setStatus("SLOW");
@@ -123,7 +124,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     const handleBrowserOnline = () => {
       setStatus("RECOVERING");
       prevStatusRef.current = "RECOVERING";
-      // Background ping to check if API is up
+      // Background ping to check if API is up and restore UI immediately
       checkConnection();
     };
 
@@ -135,29 +136,47 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       setLatencyMs(null);
     };
 
-    const handleNetworkError = (event: Event) => {
-      // Read the error kind from the event detail if available (emitted by fetchWithAuth)
-      const detail = (event as CustomEvent).detail;
-      const kind: OfflineFallbackKind =
-        detail?.kind === "TIMEOUT"
-          ? "TIMEOUT"
-          : detail?.kind === "API_DOWN" || (typeof navigator !== "undefined" && navigator.onLine)
-          ? "API_DOWN"
-          : "OFFLINE";
+    const handleFocus = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        checkConnection();
+      }
+    };
 
-      setNetworkErrorKind(kind);
-      setStatus("OFFLINE");
-      setIsOffline(true);
-      prevStatusRef.current = "OFFLINE";
+    const handleNetworkError = (event: Event) => {
+      // If browser is physically disconnected, show offline screen immediately
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setNetworkErrorKind("OFFLINE");
+        setStatus("OFFLINE");
+        setIsOffline(true);
+        prevStatusRef.current = "OFFLINE";
+        return;
+      }
+
+      // If browser is online, an isolated fetch request might have timed out.
+      // Verify whether the API health check actually fails before hijacking the entire screen.
+      const detail = (event as CustomEvent).detail;
+      const errorKind: OfflineFallbackKind =
+        detail?.kind === "TIMEOUT" ? "TIMEOUT" : "API_DOWN";
+
+      checkConnection().then((isReachable) => {
+        if (!isReachable) {
+          setNetworkErrorKind(errorKind);
+          setStatus("OFFLINE");
+          setIsOffline(true);
+          prevStatusRef.current = "OFFLINE";
+        }
+      });
     };
 
     window.addEventListener("online", handleBrowserOnline);
     window.addEventListener("offline", handleBrowserOffline);
+    window.addEventListener("focus", handleFocus);
     window.addEventListener("devflow:network_error", handleNetworkError);
 
     return () => {
       window.removeEventListener("online", handleBrowserOnline);
       window.removeEventListener("offline", handleBrowserOffline);
+      window.removeEventListener("focus", handleFocus);
       window.removeEventListener("devflow:network_error", handleNetworkError);
     };
   }, [checkConnection]);

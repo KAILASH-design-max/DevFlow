@@ -213,16 +213,22 @@ app.get("/health", async (_req, res) => {
 
   try {
     const start = Date.now();
-    await prisma.$queryRaw`SELECT 1`;
+    // Fast timeout (1500ms max) for database probe so liveness checks never block or cause client timeouts
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("DB probe timeout")), 1500)),
+    ]);
     dbLatencyMs = Date.now() - start;
   } catch {
-    dbStatus = "disconnected";
+    dbStatus = "degraded";
     isHealthy = false;
   }
 
   const mem = process.memoryUsage();
 
-  res.status(isHealthy ? 200 : 503).json({
+  // Always return 200 so browser health checks, reverse proxies, and Docker/Render liveness probes
+  // know the API server process is online and reachable even if Neon DB compute is warming up.
+  res.status(200).json({
     status: isHealthy ? "ok" : "degraded",
     database: dbStatus,
     databaseLatencyMs: dbLatencyMs,
@@ -355,11 +361,13 @@ app.use(errorHandler);
 
 if (!process.env.VERCEL) {
   const listenPort = process.env.PORT ? parseInt(process.env.PORT, 10) : config.port;
-  const server = app.listen(listenPort, "0.0.0.0", () => {
+  // Listen on all network interfaces (dual-stack IPv4/IPv6). On Windows, omitting "0.0.0.0"
+  // enables Node to accept connections on both ::1 and 127.0.0.1 without 2.7s IPv6 resolution stalls.
+  const server = app.listen(listenPort, () => {
     console.log(`
   ╔═══════════════════════════════════════════╗
   ║     🚀 DevFlow API Server Running        ║
-  ║     Host: 0.0.0.0                         ║
+  ║     Host: all interfaces (IPv4/IPv6)      ║
   ║     Port: ${String(listenPort).padEnd(28)}║
   ║     Env:  ${config.nodeEnv.padEnd(28)}║
   ║     CORS: ${config.corsOrigin.padEnd(28)}║

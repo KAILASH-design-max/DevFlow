@@ -85,7 +85,10 @@ export default function GlobalRouteError({
       }
       const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/+$/, "");
       try {
-        const res = await fetch(`${apiBase}/health`, { cache: "no-store" });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(`${apiBase}/health`, { signal: controller.signal, cache: "no-store" });
+        clearTimeout(timeoutId);
         if (!res.ok) throw new Error("API unreachable");
       } catch {
         throw new Error("Still unreachable");
