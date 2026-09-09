@@ -367,7 +367,7 @@ export class BillingService {
       process.env.STRIPE_WEBHOOK_SECRET,
       process.env.PAYMENT_WEBHOOK_SECRET,
       config.paymentWebhookSecret,
-      config.jwtSecret,
+      config.nodeEnv !== "production" ? config.jwtSecret : undefined,
     ].filter((s): s is string => Boolean(s));
 
     for (const s of candidateSecrets) {
